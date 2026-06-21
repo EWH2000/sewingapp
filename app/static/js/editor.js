@@ -30,11 +30,13 @@
   // #b7b3aa) so low-vision eyes can still read every outline; the active piece
   // stays dominant via the orange fill + handles + full-ink stroke.
   const SEAMC = "#8a8f98", DIM = "#5f6470", DIMFILL = "rgba(95,100,112,0.07)";
+  const WARN = "#d4351c";   // overlapping pieces — a clear red, readable for low vision
   const FILL = "rgba(224,101,58,0.06)";
   const HIT_VERTEX = 22, HIT_EDGE = 14, K_MIN = 0.05, K_MAX = 40, MOVE_TOL = 4;
 
   let svg, geoG, gridG, pathsG, edgesG, handlesG, nameInput, readoutEl;
   let rafPending = false;
+  let overlapSet = new Set();   // piece indices that overlap another piece on the board
 
   const state = {
     id: null, name: "", kind: "freeform",
@@ -87,6 +89,12 @@
   }
   function download(bytes, filename) {
     const url = URL.createObjectURL(pdfBlob(bytes));
+    const a = document.createElement("a"); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  function downloadText(text, filename, mime) {
+    const url = URL.createObjectURL(new Blob([text], { type: mime }));
     const a = document.createElement("a"); a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
@@ -166,12 +174,30 @@
     piece.layout = { x: G.round2(bb.maxX + 20 - lb.minX), y: G.round2((bb.minY || 0) - lb.minY) };
   }
 
+  // ── overlap detection (axis-aligned board bboxes; cheap n² over a few pieces) ─
+  function computeOverlaps() {
+    const set = new Set(), EPS = 0.5;   // ignore merely-touching edges
+    const boxes = state.pieces.map((p) => G.bbox(pieceBoardNodes(p).map((n) => [n.x, n.y])));
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        const ox = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+        const oy = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+        if (ox > EPS && oy > EPS) { set.add(i); set.add(j); }
+      }
+    overlapSet = set;
+    return set;
+  }
+  function warnIfOverlap() {
+    if (computeOverlaps().size) { setStatus("Heads up — pieces overlap; they'll print on top of each other.", "warn"); clearStatus(4500); }
+  }
+
   // ── render ──────────────────────────────────────────────────────────────────
   function scheduleRender() {
     if (rafPending) return; rafPending = true;
     requestAnimationFrame(() => { rafPending = false; render(); });
   }
-  function render() { applyCamera(); drawGrid(); drawPaths(); drawOverlay(); renderPieceList(); updateNumericPanel(); updateButtons(); }
+  function render() { applyCamera(); drawGrid(); computeOverlaps(); drawPaths(); drawOverlay(); renderPieceList(); updateNumericPanel(); updateButtons(); }
   function applyCamera() { geoG.setAttribute("transform", G.cameraMatrix(state.cam)); }
 
   function drawGrid() {
@@ -215,11 +241,11 @@
       const p = state.pieces[pi], L = layoutOf(p), act = pi === state.active;
       const g = pieceGeomCached(p);
       const off = (pts) => pts.map((pt) => [pt[0] + L.x, pt[1] + L.y]);
-      const op = act ? 1 : 0.85;
+      const op = act ? 1 : 0.85, over = overlapSet.has(pi);
       if (g.seam && g.seam.length)
         s += `<path d="${polyD(off(g.seam))}" fill="none" stroke="${SEAMC}" stroke-width="1" stroke-dasharray="5 3" opacity="${op}" vector-effect="non-scaling-stroke"/>`;
       if (g.cut && g.cut.length)
-        s += `<path d="${polyD(off(g.cut))}" fill="${act ? FILL : DIMFILL}" stroke="${act ? INK : DIM}" stroke-width="${act ? 2 : 1.7}" opacity="${op}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        s += `<path d="${polyD(off(g.cut))}" fill="${act ? FILL : DIMFILL}" stroke="${over ? WARN : (act ? INK : DIM)}" stroke-width="${over ? 2.2 : (act ? 2 : 1.7)}" opacity="${op}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       p.placements.forEach((pl, idx) => {
         const sel = act && state.selection.type === "placement" && state.selection.index === idx;
         const pts = `${pl.x + L.x},${pl.y + L.y} ${pl.x + pl.w + L.x},${pl.y + L.y} ${pl.x + pl.w + L.x},${pl.y + pl.h + L.y} ${pl.x + L.x},${pl.y + pl.h + L.y}`;
@@ -347,8 +373,10 @@
         + `<div class="grid2">`
         + `<label class="fld" style="margin:0"><span>X</span><input type="number" id="ed-x" inputmode="decimal" step="any" value="${fmtVal(n.x)}"></label>`
         + `<label class="fld" style="margin:0"><span>Y</span><input type="number" id="ed-y" inputmode="decimal" step="any" value="${fmtVal(n.y)}"></label>`
-        + `</div>`;
-      wireNumeric(["#ed-x", "#ed-y"]);
+        + `</div>`
+        + `<label class="fld" style="margin:.4rem 0 0"><span>Round this corner (${unitShort()}) — 0 = use piece default</span>`
+        + `<input type="number" id="ed-radius" inputmode="decimal" step="any" min="0" value="${fmtVal(n.radius || 0)}"></label>`;
+      wireNumeric(["#ed-x", "#ed-y", "#ed-radius"]);
     } else if (sel.type === "edge") {
       const i = sel.index, n = ns.length, a = ns[i], b = ns[(i + 1) % n], j = (i + 1) % n;
       box.innerHTML =
@@ -398,6 +426,8 @@
       const x = toMm(parseFloat($("#ed-x").value)), y = toMm(parseFloat($("#ed-y").value));
       if (!isFinite(x) || !isFinite(y)) return;
       ns[sel.index].x = G.round2(x); ns[sel.index].y = G.round2(y);
+      const rEl = $("#ed-radius");
+      if (rEl) { const r = toMm(parseFloat(rEl.value)); ns[sel.index].radius = isFinite(r) && r > 0 ? G.round2(r) : 0; }
       commit(); render();
     } else if (sel.type === "edge" && $("#ed-len")) {
       const L = toMm(parseFloat($("#ed-len").value));
@@ -650,7 +680,7 @@
     }
     if (mode === "drag") { if (dragMoved) commit(); else setReadoutForSelection(); dragIndex = -1; mode = "idle"; scheduleRender(); return; }
     if (mode === "dragPlace") { if (dragMoved) commit(); placeIndex = -1; mode = "idle"; scheduleRender(); return; }
-    if (mode === "dragPiece") { if (dragMoved) commit(); mode = "idle"; scheduleRender(); return; }
+    if (mode === "dragPiece") { if (dragMoved) { commit(); warnIfOverlap(); } mode = "idle"; scheduleRender(); return; }
     if (mode === "maybePiece") {
       if (pieceMove.switched) { fitPiece(pieceMove.idx); render(); }   // tapped another piece → select + zoom in
       else resolveActiveTap(p);                                         // tapped the active piece → edit
@@ -717,6 +747,16 @@
     const doc = buildDoc(); setStatus("Building the pattern…", "info");
     const res = await buildTiled(doc); if (!res) return;
     await printBytes(res.bytes, "pattern", { sheets: res.sheets, name: doc.name });
+  }
+  // Export the whole board as a single vector file (the exact geometry that prints).
+  function doExport(format) {
+    const doc = buildDoc();
+    const text = G.exportBoard(doc, format);
+    if (!text) { setStatus("Couldn't build the export — reload the page and try again.", "bad"); return; }
+    const base = (doc.name || "pattern").replace(/\s+/g, "-");
+    if (format === "dxf") downloadText(text, base + ".dxf", "application/dxf");
+    else downloadText(text, base + ".svg", "image/svg+xml");
+    setStatus(`Exported ${format.toUpperCase()}.`, "good"); clearStatus(4000);
   }
 
   // ── load ──────────────────────────────────────────────────────────────────
@@ -789,6 +829,8 @@
         case "ed-save": save(); break;
         case "ed-download": doDownload(); break;
         case "ed-print": doPrint(); break;
+        case "ed-export-svg": doExport("svg"); break;
+        case "ed-export-dxf": doExport("dxf"); break;
         case "ed-add-piece": addPiece(); break;
         case "ed-dup-piece": duplicatePiece(); break;
         case "ed-del-piece": deletePiece(); break;

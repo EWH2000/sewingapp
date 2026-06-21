@@ -103,15 +103,30 @@ preserved) → Download → PDF matches the on-screen layout.
   paths). `pieceGeom` must keep its no-Maker.js fallback.
 - BASE_PATH on every emitted URL and `fetch()`.
 
-## What's left (deferred — none started; pick with the user)
-- **SVG/DXF export** — nearly free now via `makerjs.exporter` (give her files to send
-  to a shop / cutter / import elsewhere).
-- **Per-corner radius** — today radius is uniform per piece; `nodes[].radius` already
-  exists in the model, just not wired to per-node UI/geom.
-- **Overlap warning** on the board (arrangement allows overlap by design; warn so she
-  doesn't waste paper).
+## Done 2026-06-21 (this session)
+- **Blank-editor bug fixed** — `piecesFromDoc` returned pieces missing
+  `notches`/`placements`/`cornerRadius`/`layout`, so opening a saved **box** tote threw
+  in `drawPaths` → dead canvas. Now routed through `clonePiece`. (+ asset-version cache
+  busting in `main.py`/templates: CSS/JS get `?v=<hash>` so an iPad never pins stale JS.)
+- **Unselected pieces** are now a readable slate (`DIM=#5f6470`, 0.85 opacity, faint fill)
+  instead of near-invisible pale gray — low-vision friendly.
+- **Per-corner radius** — `nodes[].radius` wired to a "Round this corner" input on a
+  selected corner; `pieceGeom` fillets each corner with its own radius (per-node loop over
+  `mk.path.fillet`, falls back to the piece-wide `cornerRadius` when a node's is 0).
+- **Board overlap warning** — overlapping pieces draw with a red cut outline (`WARN=#d4351c`)
+  and a status nudge on manual drag (`computeOverlaps`/`warnIfOverlap`, AABB on board bboxes).
+- **SVG/DXF export** — `G.exportBoard(doc, "svg"|"dxf")` (Maker.js `exporter.toSVG/toDXF`,
+  mm units) + Export SVG/DXF buttons; exports the exact printed geometry (reuses `buildDoc`).
+- Tests: `verify-editor-geom.mjs` now **68 assertions** (per-corner fillet, export, overlap
+  predicate); tiler regression still green. Verified live through Caddy (Playwright):
+  rounded corner, red overlap + warning, SVG/DXF downloads, zero console errors.
+
+## What's left (deferred — pick with the user)
 - **True pocket↔panel linking** — a placement guide that references an actual pocket
-  piece (so editing the pocket updates the guide).
+  piece (so editing the pocket updates the guide). (Scoped out this session.)
+- Per-corner-radius **sharp override** — today a piece default can't be overridden to
+  "sharp" at a single corner (node radius 0 = inherit); a `-1`=sharp sentinel would fix it.
+- Export polish — text-label layers / per-kind SVG colors (v1 exports geometry only).
 - Other candidates raised along the way: curved edges (Bézier handles, not just
   rounded corners); garment templates (the FreeSewing-core era — DESIGN.md's trigger
   for finally adding a build step).

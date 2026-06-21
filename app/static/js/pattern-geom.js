@@ -204,21 +204,38 @@
   // failed — e.g. SA too large for a tight feature). No Maker.js / no radius /
   // no SA → straight cut line (unchanged, dependency-free).
   function pieceGeom(piece) {
-    const r = Math.max(0, piece.cornerRadius || 0);
+    const nodes = piece.nodes || [];
+    const baseR = Math.max(0, piece.cornerRadius || 0);
     const sa = Math.max(0, piece.seamMm || 0);
+    // Per-corner radius: a node's own radius (>0) wins, else the piece default.
+    // (0 inherits the default — so a piece default can't be overridden to "sharp"
+    // at a single corner; set the default to 0 and round corners individually.)
+    const radii = nodes.map((n) => (n && n.radius > 0 ? n.radius : baseR));
+    const maxR = radii.reduce((m, v) => Math.max(m, v), 0);
     const mk = maker();
-    if (!mk || (r === 0 && sa === 0)) {
+    if (!mk || (maxR === 0 && sa === 0)) {
       return { cut: nodesToPoints(piece.nodes, piece.closed), seam: null };
     }
-    const facet = facetFor(r);
-    let model = modelFromNodes(mk, piece.nodes);
-    if (r > 0) {
+    const facet = facetFor(maxR);
+    let model = modelFromNodes(mk, nodes);
+    if (maxR > 0) {
       try {
-        const ch = mk.model.findChains(model)[0];
-        const fil = ch ? mk.chain.fillet(ch, r) : null;
-        if (fil) model = { models: { base: model, fillets: fil } };
-        else model = modelFromNodes(mk, piece.nodes);
-      } catch (_) { model = modelFromNodes(mk, piece.nodes); }
+        // Mirror Maker.js's own chainFillet, but pick the radius per corner. Edge
+        // e[i] = node_i → node_{i+1}; corner i joins incoming e[i-1] and outgoing
+        // e[i] (they share node_i). path.fillet trims both lines in place + returns
+        // the arc — adjacent corners touch opposite ends of a shared edge, so the
+        // in-place mutations compose just as the uniform path did.
+        const n = nodes.length;
+        const fillets = { paths: {} };
+        let added = 0;
+        for (let i = 0; i < n; i++) {
+          if (radii[i] <= 0) continue;
+          const eIn = model.paths["e" + ((i - 1 + n) % n)], eOut = model.paths["e" + i];
+          const arc = eIn && eOut ? mk.path.fillet(eIn, eOut, radii[i]) : null;
+          if (arc) fillets.paths["f" + (added++)] = arc;
+        }
+        model = added ? { models: { base: model, fillets } } : modelFromNodes(mk, nodes);
+      } catch (_) { model = modelFromNodes(mk, nodes); }
     }
     let cut = flattenModel(mk, model, facet) || nodesToPoints(piece.nodes, piece.closed);
     let seam = null;
@@ -346,6 +363,27 @@
     };
   }
 
+  // Export the assembled board (a freeformToDoc result) as a single vector file
+  // via Maker.js (loaded only on /edit). Reuses the doc's already-flattened board
+  // polylines, so the export matches the printed PDF exactly (WYSIWYG). Our coords
+  // are mm, y-up — same convention as Maker.js (its SVG exporter does its own
+  // y-flip). format: "svg" | "dxf". Returns the file text, or null if Maker.js is
+  // unavailable (Home never loads it) or the export throws.
+  function exportBoard(doc, format) {
+    const mk = maker();
+    if (!mk || !doc) return null;
+    const model = { paths: {}, units: mk.unitType.Millimeter };
+    let k = 0;
+    for (const path of (doc.paths || [])) {
+      const pts = path.points || [];
+      for (let i = 0; i + 1 < pts.length; i++)
+        model.paths["s" + (k++)] = new mk.paths.Line([pts[i][0], pts[i][1]], [pts[i + 1][0], pts[i + 1][1]]);
+    }
+    try {
+      return format === "dxf" ? mk.exporter.toDXF(model) : mk.exporter.toSVG(model);
+    } catch (_) { return null; }
+  }
+
   // a sensible blank document for /edit (one 300×400 mm rectangle piece).
   function defaultParams() {
     return { schema: 2, gridMm: 5, pieces: [rectPiece("Piece 1", 300, 400)] };
@@ -359,6 +397,6 @@
     bbox,
     nodesToPoints, nodesToPaths, insertVertexOnEdge, polylineToNodes,
     rectPiece, normalizePieces, piecesFromDoc, pieceGeom, nearestEdge, notchMark,
-    packLayouts, normalizeDoc, freeformToDoc, defaultParams,
+    packLayouts, normalizeDoc, freeformToDoc, exportBoard, defaultParams,
   };
 })();

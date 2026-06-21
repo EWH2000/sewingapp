@@ -248,5 +248,49 @@ console.log("=== board layout: packLayouts + WYSIWYG freeformToDoc ===");
   console.log(`  board layout OK — board ${doc.widthMm}×${doc.heightMm}mm`);
 }
 
+console.log("=== per-corner radius (Maker.js fillet, per node) ===");
+{
+  const plain = G.pieceGeom(G.rectPiece("Sq", 200, 200)).cut;
+  ok(plain.length === 5, `un-rounded square has 5 cut pts (${plain.length})`);
+
+  const one = G.rectPiece("Sq", 200, 200); one.nodes[0].radius = 10;   // one corner, no piece default
+  const oneCut = G.pieceGeom(one).cut;
+  ok(oneCut.length > 5, `one corner @10mm rounds (${oneCut.length} pts)`);
+  const f = oneCut[0], l = oneCut[oneCut.length - 1];
+  ok(approx(f[0], l[0]) && approx(f[1], l[1]), "rounded cut is closed");
+
+  const all = G.rectPiece("Sq", 200, 200); all.cornerRadius = 10;       // piece default rounds all 4
+  const allCut = G.pieceGeom(all).cut;
+  ok(allCut.length > oneCut.length, `four corners @10mm > one corner (${allCut.length} > ${oneCut.length})`);
+
+  const mix = G.rectPiece("Sq", 200, 200); mix.cornerRadius = 5; mix.nodes[2].radius = 40;   // node overrides default
+  const mixCut = G.pieceGeom(mix).cut;
+  ok(mixCut.length > 5 && approx(mixCut[0][0], mixCut[mixCut.length - 1][0]), "mixed default+override flattens, closed");
+
+  await assertPages((await P.makeTiledPdf(G.freeformToDoc({ name: "Rounded", pieces: [one] }))).bytes, "per-corner rounded → tiler");
+  console.log(`  per-corner radius OK — plain ${plain.length}, one ${oneCut.length}, all ${allCut.length} pts`);
+}
+
+console.log("=== SVG/DXF export (Maker.js exporters) ===");
+{
+  const doc = G.freeformToDoc({ name: "Exp", pieces: [G.rectPiece("A", 120, 80), G.rectPiece("B", 60, 200)] });
+  const svg = G.exportBoard(doc, "svg");
+  ok(typeof svg === "string" && svg.includes("<svg") && /<(path|line)/.test(svg), "exportBoard svg → an <svg> with geometry");
+  const dxf = G.exportBoard(doc, "dxf");
+  ok(typeof dxf === "string" && dxf.includes("ENTITIES") && dxf.includes("LINE"), "exportBoard dxf → ENTITIES/LINE");
+  ok(G.exportBoard(null, "svg") === null, "exportBoard(null) → null");
+  console.log(`  export OK — svg ${svg.length}b, dxf ${dxf.length}b`);
+}
+
+console.log("=== overlap predicate (board bboxes, mirrors editor.js) ===");
+{
+  const over = (a, b) => Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 0.5 && Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY) > 0.5;
+  const A = G.bbox([[0, 0], [100, 100]]);
+  ok(over(A, G.bbox([[50, 50], [150, 150]])), "overlapping bboxes detected");
+  ok(!over(A, G.bbox([[200, 0], [300, 100]])), "separated bboxes not flagged");
+  ok(!over(A, G.bbox([[100, 0], [200, 100]])), "edge-touching bboxes not flagged");
+  console.log("  overlap predicate OK");
+}
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
