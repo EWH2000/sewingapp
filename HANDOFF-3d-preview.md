@@ -136,10 +136,20 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
       piece ids, `G.normalizeSeams`, `tools/tiling/verify-seams.mjs`); tap edge↔edge to author,
       per-seam fold-angle, round-trips through save + undo/redo. **Deferred to M3+:** notch
       `{edge,t,type}` upgrade + anchors UI, **dart authoring/self-seams**, seam flip.*
-- [ ] **M3** — Step 2 rigid fold-up (`pattern-fold.js`: spanning tree + Levenberg–
-      Marquardt closure solve for the cyclic seams; three.js hinge renderer; graceful
-      degradation). *~3–5.* **← M3 must be solid before M4/M5: the rigid fold is the warm
-      start that keeps the cloth solver from exploding.**
+- [x] **M3** — Step 2 rigid fold-up. *DONE 2026-06-21 — `pattern-fold.js` (pure/headless
+      `window.PatternFold.foldDoc`: spanning-forest BFS + forward kinematics + Levenberg–
+      Marquardt closure solve; **per-seam direction is SEARCHED**, not defaulted — a box and a
+      tube need opposite conventions; degrade-never-blank ladder). `preview3d.js` freeform path
+      (`ShapeGeometry` faces placed by `{pos,quat}`, `pieceFaceTexture`, dashed gap seams,
+      **outward-normal UV flip so panel text isn't mirror-reversed**); routing + fold readout +
+      **Floor-piece override** (auto-detect base by hinge-degree, persisted `foldRoot`); Sew-mode
+      **flip-direction toggle**. Tests `tools/preview/verify-fold.mjs` (33) + `verify-fold-mesh.mjs`
+      (9). Gate cleared on her iPad. **Corrected the handoff:** root = max hinge-degree (not
+      largest area — a tall tote's largest panel is a wall); tote cycles = 4 (not ~2); PREVIEW.md
+      §3.6(a)'s tote JSON has an edge-index slip (pairs a 250 mm edge to a 120 mm one). **Deferred
+      to its own session: STRAP integration** (her patterns include the strap — fold it into the
+      bag, not just the box-preview ribbon). Also still deferred: notch `{edge,t,type}` + anchors
+      UI, dart self-seams, atelier re-skin.* **← the rigid fold is the warm start M4/M5 need.**
 - [ ] **M4** — Step 3a inflated bag (`pattern-mesh.js` poly2tri triangulation;
       `pattern-cloth.js` XPBD distance/bend/seam/pressure; the §6.6 stability protocol;
       `preview3d` settled cache). *~6–10.*

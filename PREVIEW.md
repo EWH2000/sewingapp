@@ -883,11 +883,21 @@ focused sessions; estimates, not commitments — 3b especially.)
   `/edit` (tap edge↔edge → seam; connector + seam list; per-seam fold-angle preset), round-trips
   through save + undo/redo. Gate cleared on her iPad. **Deferred to M3+:** notch `{edge,t,type}`
   upgrade + anchors UI, dart authoring/self-seams, seam flip (the fold makes direction visible).
-- [ ] **M3 — Step 2 rigid fold-up (~3–5).** `pattern-fold.js` (spanning tree + LM
-  closure), the three.js hinge renderer, degradation ladder; `verify-fold.mjs`.
-  **Gate:** the tote folds up and closes; a non-box bag with `null` angles solves;
-  mismatches degrade with a mm readout. **This is the foundation Step 3 stands on —
-  don't start 3 until the seam graph + fold are solid.**
+- [x] **M3 — Step 2 rigid fold-up. DONE 2026-06-21.** `pattern-fold.js` (pure/headless
+  `window.PatternFold.foldDoc`: spanning-forest BFS + forward kinematics + LM closure solve;
+  **per-seam direction is searched** for the globally-consistent assignment that closes — a box
+  and a tube need opposite head-to-tail/head-to-head conventions; degrade-never-blank ladder).
+  `preview3d.js` freeform path: `ShapeGeometry` faces placed by `{pos,quat}`, `pieceFaceTexture`,
+  dashed gap seams, **outward-normal UV flip** (so inward-facing panels' pattern text isn't
+  mirror-reversed). Routing + fold readout + **Floor-piece override** (auto-detect base by
+  hinge-degree, persisted additive `foldRoot`); Sew-mode **flip-direction toggle**. Tests
+  `tools/preview/verify-fold.mjs` (33) + `verify-fold-mesh.mjs` (9). Gate cleared on her iPad.
+  **Refinements vs this doc:** root = max hinge-degree, not largest area (a tall tote's largest
+  panel is a wall, which would lay the bag on its face); the worked tote's cycle count is **4**,
+  not the "~2" §5.2 implies; and **§3.6(a)'s tote JSON has an edge-index slip** — it pairs front's
+  250 mm vertical edge to a side's 120 mm top edge (non-hingeable); `verify-fold.mjs` uses the
+  geometrically-consistent vertical pairings. **Deferred to its own session: STRAP integration**
+  (her real patterns include a strap piece — fold it into the bag, replacing the box-only ribbon).
 - [ ] **M4 — Step 3a inflated bag (~6–10).** `pattern-mesh.js` (poly2tri), `pattern-
   cloth.js` (XPBD: distance/bend/seam/pressure), the §6.6 stability protocol,
   `preview3d` cache; mesh/correspondence tests. **Gate:** a sewn, inflated, orbitable,

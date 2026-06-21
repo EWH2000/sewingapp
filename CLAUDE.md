@@ -117,7 +117,7 @@ auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-
 radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
 the only part not auto-tested — verify by drawing.
 
-**3D assembled preview — M0–M2 DONE; iPad gates cleared (2026-06-21); M3 next.** Full build spec in
+**3D assembled preview — M0–M3 DONE; iPad gates cleared (2026-06-21); M4 next.** Full build spec in
 `PREVIEW.md`: an in-browser three.js preview of the *sewn-up* product, on the road to a
 soft-body **garment cloth-drape** (the real goal — she's making skirts + tank-style
 dresses; sleeveless-first by design, sleeves are an additive M6 escape hatch, nothing
@@ -143,7 +143,22 @@ piece ids; `G.normalizeSeams` drops dangling refs; headless-tested in `tools/til
 seams.mjs`) authored via a new **Sew mode** in `/edit` (tap an edge on one piece, then a
 matching edge on another → a seam; per-seam fold-angle preset; round-trips through save +
 undo/redo). **Deferred to M3+:** notch `{edge,t,type}` upgrade + anchors UI, dart authoring/
-self-seams, seam flip — and the preview doesn't *consume* seams yet. **Next: M3** (rigid
-fold-up: `pattern-fold.js` spanning-tree + LM closure → the folded 3D bag) — **start the M3
-session with `HANDOFF-M3-fold.md`** (self-contained starting orders). General build-tracking +
-locked decisions live in `HANDOFF-3d-preview.md` + `PREVIEW.md`.
+self-seams, seam flip — and the preview doesn't *consume* seams yet. **M3 DONE (2026-06-21):**
+the preview now **folds a freeform bag up** from its seam graph. `app/static/js/pattern-fold.js`
+(pure/headless `window.PatternFold.foldDoc`): spanning-forest BFS + forward kinematics + a
+Levenberg–Marquardt closure solve for the cyclic seams; **per-seam direction (head-to-tail vs
+head-to-head) is SEARCHED** for the assignment that closes (a box and a tube need opposite
+conventions — not a fixed default); degrade-never-blank ladder (`closed`/`open`/`tree`). Renderer
+in `preview3d.js` (additive — box path byte-identical): `ShapeGeometry` faces placed by each
+piece's `{pos,quat}`, `pieceFaceTexture` (true outline, UV-registered), dashed gap seams for
+unclosed cycles, and an **outward-normal UV flip** so inward-facing panels' pattern text reads
+forward (not mirror-reversed). `preview.js` routing + fold readout + a **Floor-piece override**
+(auto-detect the base by hinge-degree, with a persisted additive `foldRoot` to correct it);
+Sew-mode **flip-direction toggle** (`anchors`). Headless tests `tools/preview/verify-fold.mjs`
+(33) + `verify-fold-mesh.mjs` (9); print spine/calibration gate/M1 box untouched. **Refinements
+vs the handoff:** root = max hinge-degree (largest area picks a wall on a tall tote); tote cycle
+count = 4; PREVIEW.md §3.6(a)'s tote JSON has an edge-index slip (pairs a 250 mm edge to a 120 mm
+one — `verify-fold.mjs` uses the consistent verticals). **Next: STRAP integration** (her real
+patterns include a strap — fold it into the bag, replacing the box-only ribbon; its own session),
+then **M4** (Step 3a inflated bag). General build-tracking + locked decisions live in
+`HANDOFF-3d-preview.md` + `PREVIEW.md`; `HANDOFF-M3-fold.md` was the M3 starting orders.

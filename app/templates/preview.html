@@ -7,6 +7,8 @@
   <script src="{{ base_path }}/static/js/vendor/browser.maker.js?v={{ asset_ver }}" defer></script>
   <script src="{{ base_path }}/static/js/vendor/maker-shim.js?v={{ asset_ver }}" defer></script>
   <script src="{{ base_path }}/static/js/pattern-geom.js?v={{ asset_ver }}" defer></script>
+  {# M3 rigid fold solver (window.PatternFold) — classic defer, before the ESM module reads it. #}
+  <script src="{{ base_path }}/static/js/pattern-fold.js?v={{ asset_ver }}" defer></script>
 
   {# Same injection channel as window.SEWING_EDIT on /edit — id/name/kind only. #}
   <script>window.SEWING_PREVIEW = {{ (pattern or {})|tojson }};</script>
@@ -90,6 +92,20 @@
     }
     .pv-hint[hidden] { display: none; }
 
+    /* Floor-piece override — top-right, over the studio. */
+    .pv-floor { position: absolute; right: 16px; top: 15px; z-index: 3; }
+    .pv-floor[hidden] { display: none; }
+    .pv-floor__sel {
+      -webkit-appearance: none; appearance: none;
+      background: var(--pv-plate); color: var(--pv-paper);
+      -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+      border: 1px solid rgba(255,255,255,0.1); border-top: 2px solid var(--pv-brass);
+      border-radius: 4px; padding: 7px 12px; font-size: 12.5px; font-weight: 600;
+      letter-spacing: 0.02em; max-width: 52vw;
+    }
+    .pv-floor__sel:focus { outline: none; border-color: var(--pv-brass); }
+    .pv-floor__sel option { color: #1b1d21; }
+
     .preview-msg {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       text-align: center; padding: 24px; color: var(--pv-paper); font-size: 15px; line-height: 1.5;
@@ -107,6 +123,11 @@
   <div class="pv-overlay">
     <div class="pv-eyebrow">Assembled preview</div>
     <h1 class="pv-title">{{ pattern.name if pattern else "Preview" }}</h1>
+  </div>
+
+  {# Floor-piece override (fold path only) — shown by preview.js when a freeform doc folds. #}
+  <div class="pv-floor" id="pv-floor-wrap" hidden>
+    <select id="pv-floor" class="pv-floor__sel" aria-label="Which piece sits on the floor"></select>
   </div>
 
   <figure class="pv-spec" id="pv-spec" hidden>

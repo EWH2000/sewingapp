@@ -734,6 +734,22 @@
     s.foldAngle = v === "null" ? null : parseFloat(v);
     commit(); render();
   }
+  // Which way the two edges meet. The fold auto-searches this, but if it guesses wrong
+  // (the bag folds inside-out) she can pin it. anchors encodes it: head-to-tail pairs
+  // t=0↔t=1, head-to-head pairs t=0↔t=0; null = let the fold decide. Cycles auto→fwd→flip.
+  function seamDir(s) {
+    if (!s.anchors || !s.anchors[0]) return "auto";
+    return Math.abs(s.anchors[0].ta - s.anchors[0].tb) < 0.5 ? "flip" : "fwd";
+  }
+  function setSeamFlip() {
+    if (state.selection.type !== "seam") return;
+    const s = state.seams[state.selection.index]; if (!s) return;
+    const cur = seamDir(s);
+    s.anchors = cur === "auto" ? [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }]
+      : cur === "fwd" ? [{ ta: 0, tb: 0 }, { ta: 1, tb: 1 }]
+        : null;
+    commit(); render();
+  }
   function toggleSew() {
     state.sewMode = !state.sewMode;
     if (state.sewMode && state.notchMode) { state.notchMode = false; updateNotchChip(); }
@@ -764,9 +780,11 @@
     if (!s) { ed.innerHTML = ""; return; }
     const ang = s.foldAngle;
     const ab = (v, label) => `<button class="btn small editor__toggle${(v === "null" ? ang == null : ang === parseFloat(v)) ? " on" : ""}" data-action="ed-seam-angle" data-angle="${v}">${label}</button>`;
+    const dir = seamDir(s), dirLabel = dir === "auto" ? "Auto" : dir === "fwd" ? "Forward" : "Flipped";
     ed.innerHTML = `<div class="small muted" style="margin-bottom:6px">Fold angle <span class="muted">(used by the 3D fold)</span></div>`
       + `<div class="btnrow">${ab("0", "Flat")}${ab("90", "90°")}${ab("180", "Fold")}${ab("null", "Auto")}</div>`
-      + `<button class="btn small btn--ghost btn--block" data-action="ed-del-seam" style="margin-top:10px">Delete seam</button>`;
+      + `<button class="btn small btn--ghost btn--block${dir !== "auto" ? " on" : ""}" data-action="ed-seam-flip" style="margin-top:8px">Direction: ${dirLabel}</button>`
+      + `<button class="btn small btn--ghost btn--block" data-action="ed-del-seam" style="margin-top:8px">Delete seam</button>`;
   }
 
   // ── pointer interaction ──────────────────────────────────────────────────────
@@ -1013,6 +1031,7 @@
         case "ed-select-seam": selectSeam(parseInt(btn.dataset.seam, 10)); break;
         case "ed-del-seam": deleteSeam(); break;
         case "ed-seam-angle": setSeamAngle(btn.dataset.angle); break;
+        case "ed-seam-flip": setSeamFlip(); break;
         case "ed-delete": deleteSelected(); break;
         case "ed-add-place": addPlacement(); break;
         case "ed-del-place": deletePlacement(); break;

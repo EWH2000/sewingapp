@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { docToMesh, panelCanvasTexture, frameObject, contactShadow } from 'preview3d';
+import { docToMesh, panelCanvasTexture, pieceFaceTexture, frameObject, contactShadow } from 'preview3d';
 
 const BASE = window.SEWING_BASE || '';
 const ident = window.SEWING_PREVIEW || {};
@@ -25,8 +25,10 @@ const msgEl = document.getElementById('preview-msg');
 const specEl = document.getElementById('pv-spec');
 const specGrid = document.getElementById('pv-spec-grid');
 const hintEl = document.getElementById('pv-hint');
+const floorEl = document.getElementById('pv-floor-wrap');
 const setMsg = (t) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.hidden = !t; } };
 const show = (el, on) => { if (el) el.hidden = !on; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 if (!canvas || !stage) {
   console.error('[preview] missing #preview-canvas / #preview-stage');
@@ -80,21 +82,92 @@ async function init() {
   } catch (e) { console.warn('[preview] fetch failed', e); }
 
   if (!pat) { setMsg('Could not load this pattern.'); return; }
-  if (pat.kind !== 'box') {
-    setMsg('3D preview supports boxy totes so far — garments and freeform shapes are coming.');
+
+  // ── box (M1): the parametric boxy tote — unchanged ──
+  if (pat.kind === 'box') {
+    const group = docToMesh(pat, { makeTexture: (p) => panelCanvasTexture(p, UNIT) });
+    scene.add(group);
+    const sh = contactShadow(+pat.params.widthMm, +pat.params.depthMm);
+    if (sh) scene.add(sh);
+    frameObject(camera, controls, group, 1.35);
+    resize();
+    fillSpec(pat);
+    setMsg(''); show(specEl, true); show(hintEl, true);
+    console.log('[preview] box mesh ready:', pat.name);
     return;
   }
 
-  const group = docToMesh(pat, { makeTexture: (p) => panelCanvasTexture(p, UNIT) });
-  scene.add(group);
-  const sh = contactShadow(+pat.params.widthMm, +pat.params.depthMm);
-  if (sh) scene.add(sh);
-  frameObject(camera, controls, group, 1.35);
-  resize();
+  // ── freeform WITH a seam graph (M3): fold it up ──
+  const seams = pat.params && pat.params.seams;
+  if (pat.kind === 'freeform' && Array.isArray(seams) && seams.length) {
+    if (!window.PatternFold) { setMsg('The 3D fold engine didn’t load — try reloading the page.'); return; }
+    let foldGroup = null, foldShadow = null;
+    const buildFold = () => {
+      if (foldGroup) { scene.remove(foldGroup); foldGroup = null; }
+      if (foldShadow) { scene.remove(foldShadow); foldShadow = null; }
+      const group = docToMesh(pat, { makeTexture: (p) => pieceFaceTexture(p, UNIT) });
+      if (!group.children.length) {
+        setMsg(group.userData.foldError
+          ? 'Could not fold this pattern (the seams may not form a foldable shape).'
+          : 'Add seams in Sew mode to fold this pattern in 3D.');
+        return;
+      }
+      scene.add(group); foldGroup = group;
+      const bb = new THREE.Box3().setFromObject(group);
+      const sz = bb.getSize(new THREE.Vector3());
+      const sh = contactShadow(sz.x, sz.z);
+      if (sh) { sh.position.y = bb.min.y - 2; scene.add(sh); foldShadow = sh; }
+      frameObject(camera, controls, group, 1.4);
+      resize();
+      fillFoldSpec(pat, group.userData.fold);
+      setMsg(''); show(specEl, true); show(hintEl, true);
+      console.log('[preview] fold ready:', pat.name, group.userData.fold);
+    };
+    buildFold();
+    setupFloorControl(pat, buildFold);
+    return;
+  }
 
-  fillSpec(pat);
-  setMsg(''); show(specEl, true); show(hintEl, true);
-  console.log('[preview] box mesh ready:', pat.name);
+  // ── freeform without seams, or other kinds ──
+  setMsg(pat.kind === 'freeform'
+    ? 'No seams yet — open this pattern in Sew mode and join edges to fold it in 3D.'
+    : '3D preview supports boxy totes and folded freeform pieces so far — garments are coming.');
+}
+
+// The fold readout: piece count + whether the bag closes (and by how much if not).
+function fillFoldSpec(pat, fold) {
+  if (!specGrid || !fold) return;
+  const row = (k, v) => `<div class="pv-spec__row"><span class="pv-spec__k">${k}</span><span class="pv-spec__v">${v}</span></div>`;
+  const gaps = (fold.closures || []).map((c) => c.gapMm).filter((g) => g != null);
+  const maxGap = gaps.length ? Math.max.apply(null, gaps) : 0;
+  let line;
+  if (fold.mode === 'closed') line = maxGap < 0.5 ? 'Closes cleanly' : `Closes within ${maxGap.toFixed(1)} mm`;
+  else if (fold.mode === 'open') line = `Open by ${maxGap.toFixed(1)} mm — needs easing`;
+  else line = 'Partial fold (tree only)';
+  specGrid.innerHTML = row('Pieces', String(fold.pieceCount)) + row('Assembly', line);
+}
+
+// The "Floor piece" override — auto-detect can pick wrong (a tall tote's largest panel is a
+// wall, not the base); this lets her choose which piece lies flat. Persists an additive
+// `foldRoot` hint via the normal save (the tiler ignores it — the print spine is untouched).
+function setupFloorControl(pat, rebuild) {
+  const sel = document.getElementById('pv-floor');
+  if (!sel || !floorEl) return;
+  const pieces = (pat.params && pat.params.pieces) || [];
+  sel.innerHTML = '<option value="">Floor: auto</option>'
+    + pieces.map((p) => `<option value="${esc(p.id)}">Floor: ${esc(p.name || p.id)}</option>`).join('');
+  sel.value = pat.params.foldRoot || '';
+  show(floorEl, true);
+  sel.onchange = async () => {
+    pat.params.foldRoot = sel.value || null;
+    rebuild();
+    try {
+      await fetch(BASE + '/patterns', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pat.id, name: pat.name, kind: pat.kind, params: pat.params }),
+      });
+    } catch (e) { console.warn('[preview] could not save floor choice', e); }
+  };
 }
 
 // The "finished measurements" spec plate — the strap length lives here.

@@ -63,7 +63,15 @@ export function docToMesh(pattern, opts = {}) {
   const kind = (pattern && pattern.kind) || (params.widthMm != null && params.depthMm != null ? 'box' : null);
   const group = new THREE.Group();
   group.name = 'pattern';
-  if (kind !== 'box') { group.userData.unsupported = kind || 'unknown'; return group; }
+  if (kind !== 'box') {
+    // Freeform doc WITH a seam graph → fold it up (M3). Guarded so the box path and the
+    // headless Node test (no window/PatternFold) fall straight through to an empty group.
+    const PF = (typeof window !== 'undefined') && window.PatternFold;
+    if (kind === 'freeform' && PF && params.seams && params.seams.length && params.pieces && params.pieces.length)
+      return buildFoldedGroup(group, params, opts);
+    group.userData.unsupported = kind || 'unknown';
+    return group;
+  }
 
   const make = opts.makeTexture;
   for (const p of boxPanelsFromParams(params)) {
@@ -107,6 +115,100 @@ export function docToMesh(pattern, opts = {}) {
   group.updateMatrixWorld(true);
   return group;
 }
+
+// ── buildFoldedGroup: fold a freeform doc's pieces into 3D (M3) ────────────────────────
+// Calls window.PatternFold.foldDoc (pure, headless) for absolute per-piece transforms, then
+// builds a textured polygon per piece placed by its {pos,quat}. The mesh outline uses the
+// AUTHORED nodes (so adjacent folded faces share the exact hinge edge); the texture uses the
+// flattened cut (fillets/seam) — both framed by the same authored-nodes bbox so they register.
+// Never throws/blanks: a solver error or empty result yields an empty group + userData flags.
+function buildFoldedGroup(group, params, opts) {
+  let fold;
+  try { fold = window.PatternFold.foldDoc(params.pieces, params.seams, { root: params.foldRoot || null }); }
+  catch (e) { group.userData.foldError = String((e && e.message) || e); return group; }
+  group.userData.fold = { mode: fold.mode, closures: fold.closures, root: fold.root, cycles: fold.cycles, pieceCount: params.pieces.length };
+
+  const G = (typeof window !== 'undefined') && window.PatternGeom;
+  const make = opts.makeTexture;
+
+  // Each panel is a double-sided plane. For panels whose textured front (+Z) face points
+  // INTO the bag, the outside view is the BACK face → the pattern reads mirror-reversed. So
+  // compute each panel's outward orientation (its world center vs the bag center) and flip
+  // the texture U for inward-facing panels, so every panel reads correctly from outside.
+  const qOf = (T) => new THREE.Quaternion(T.quat[0], T.quat[1], T.quat[2], T.quat[3]);
+  const centerOf = (pc, T) => {
+    let mx = 0, my = 0; for (const nd of pc.nodes) { mx += nd.x; my += nd.y; }
+    return new THREE.Vector3(mx / pc.nodes.length, my / pc.nodes.length, 0)
+      .applyQuaternion(qOf(T)).add(new THREE.Vector3(T.pos[0], T.pos[1], T.pos[2]));
+  };
+  const bag = new THREE.Vector3(); let nc = 0;
+  for (const pc of params.pieces) { const T = fold.transforms[pc.id]; if (T && pc.nodes && pc.nodes.length >= 3) { bag.add(centerOf(pc, T)); nc++; } }
+  if (nc) bag.multiplyScalar(1 / nc);
+
+  for (const pc of params.pieces) {
+    const T = fold.transforms[pc.id];
+    if (!T || !pc.nodes || pc.nodes.length < 3) continue;
+    const shape = new THREE.Shape();
+    shape.moveTo(pc.nodes[0].x, pc.nodes[0].y);
+    for (let i = 1; i < pc.nodes.length; i++) shape.lineTo(pc.nodes[i].x, pc.nodes[i].y);
+    shape.closePath();
+    const geo = new THREE.ShapeGeometry(shape);     // earcut — handles non-convex panels
+    const bb = G && G.bbox ? G.bbox(pc.nodes) : localBbox(pc.nodes);
+    const facesOut = new THREE.Vector3(0, 0, 1).applyQuaternion(qOf(T)).dot(centerOf(pc, T).sub(bag)) >= 0;
+    const pos = geo.attributes.position, uv = [];
+    for (let i = 0; i < pos.count; i++) {
+      const u = (pos.getX(i) - bb.minX) / (bb.w || 1);
+      uv.push(facesOut ? u : 1 - u, (pos.getY(i) - bb.minY) / (bb.h || 1));
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const tex = make ? make(pc) : null;
+    const mat = tex
+      ? new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.92, metalness: 0 })
+      : new THREE.MeshStandardMaterial({ color: 0xf3efe7, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+    const m = new THREE.Mesh(geo, mat);
+    m.quaternion.set(T.quat[0], T.quat[1], T.quat[2], T.quat[3]);
+    m.position.set(T.pos[0], T.pos[1], T.pos[2]);
+    m.userData.kind = 'face'; m.userData.pieceId = pc.id; m.name = 'face:' + pc.id;
+    group.add(m);
+  }
+  if (fold.mode !== 'closed') addGapSeams(group, params, fold);
+  group.updateMatrixWorld(true);
+  return group;
+}
+
+// Dashed "this seam doesn't close" bridges for unclosed closure seams (mode open/tree).
+function addGapSeams(group, params, fold) {
+  const place = (T, n) => new THREE.Vector3(n.x, n.y, 0)
+    .applyQuaternion(new THREE.Quaternion(T.quat[0], T.quat[1], T.quat[2], T.quat[3]))
+    .add(new THREE.Vector3(T.pos[0], T.pos[1], T.pos[2]));
+  const byId = {}; (params.pieces || []).forEach((p) => { byId[p.id] = p; });
+  const seg = [];
+  for (const c of fold.closures || []) {
+    if (c.gapMm == null || c.gapMm < 0.5) continue;
+    const s = (params.seams || []).find((x) => x.id === c.seam); if (!s) continue;
+    const A = byId[s.a.piece], B = byId[s.b.piece], TA = fold.transforms[s.a.piece], TB = fold.transforms[s.b.piece];
+    if (!A || !B || !TA || !TB) continue;
+    const a0 = place(TA, A.nodes[s.a.edge]), a1 = place(TA, A.nodes[(s.a.edge + 1) % A.nodes.length]);
+    const b0 = place(TB, B.nodes[s.b.edge]), b1 = place(TB, B.nodes[(s.b.edge + 1) % B.nodes.length]);
+    // bridge by the nearer endpoint pairing (shows the "unzipped" gap clearly)
+    if (a0.distanceTo(b1) + a1.distanceTo(b0) < a0.distanceTo(b0) + a1.distanceTo(b1)) seg.push(a0, b1, a1, b0);
+    else seg.push(a0, b0, a1, b1);
+  }
+  if (!seg.length) return;
+  const line = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(seg),
+    new THREE.LineDashedMaterial({ color: 0xff5a3c, dashSize: 7, gapSize: 5, transparent: true, opacity: 0.95 }));
+  line.computeLineDistances();        // required or LineDashedMaterial renders solid
+  line.userData.kind = 'gap-seam';
+  group.add(line);
+}
+
+const localBbox = (nodes) => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of nodes) { if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y; if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; }
+  if (!isFinite(minX)) minX = minY = maxX = maxY = 0;
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+};
 
 // ── panelCanvasTexture: render a panel's flattened pattern outline to a CanvasTexture ──
 // Browser-only (uses document + the classic window.PatternGeom for the SAME flatten the
@@ -160,6 +262,48 @@ export function panelCanvasTexture(panel, unit = 'in') {
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
+  return tex;
+}
+
+// ── pieceFaceTexture: like panelCanvasTexture but for an ARBITRARY freeform piece ──────
+// Draws the piece's true flattened outline (G.pieceGeom — fillets/seam) over its authored-
+// nodes bbox, the SAME frame buildFoldedGroup uses for the mesh UVs, so the pattern registers
+// exactly on the folded polygon. Browser-only (canvas + window.PatternGeom).
+export function pieceFaceTexture(piece, unit = 'in') {
+  if (typeof document === 'undefined') return null;
+  const G = (typeof window !== 'undefined') && window.PatternGeom;
+  if (!G || !piece || !piece.nodes || piece.nodes.length < 3) return null;
+  const bb = G.bbox(piece.nodes);
+  const w = bb.w || 1, h = bb.h || 1;
+  const ppm = Math.max(1.5, Math.min(1024 / Math.max(w, h), 6));
+  const cw = Math.max(8, Math.round(w * ppm)), ch = Math.max(8, Math.round(h * ppm));
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext('2d');
+  const X = (x) => (x - bb.minX) * ppm, Y = (y) => (h - (y - bb.minY)) * ppm;   // y-up -> canvas y-down
+
+  ctx.fillStyle = PAPER; ctx.fillRect(0, 0, cw, ch);
+  let cut = null, seam = null;
+  try { const g = G.pieceGeom(piece); cut = g.cut; seam = g.seam; } catch (_) { /* fall back below */ }
+  if (!cut) { cut = piece.nodes.map((n) => [n.x, n.y]); cut.push([piece.nodes[0].x, piece.nodes[0].y]); }
+
+  const poly = (pts, stroke, width, dash) => {
+    if (!pts || !pts.length) return;
+    ctx.beginPath(); ctx.setLineDash(dash || []);
+    pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
+    ctx.lineWidth = width; ctx.strokeStyle = stroke; ctx.stroke(); ctx.setLineDash([]);
+  };
+  poly(cut, INK, Math.max(2, ppm * 1.2));
+  if (seam) poly(seam, SEAMC, Math.max(1.5, ppm * 0.8), [ppm * 3, ppm * 2]);
+
+  const fs = Math.max(12, Math.min(cw, ch) * 0.12);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = INK; ctx.font = `600 ${fs}px system-ui, -apple-system, sans-serif`;
+  ctx.fillText(piece.name || 'Piece', cw / 2, ch / 2 - fs * 0.35);
+  ctx.fillStyle = GRAINC; ctx.font = `${fs * 0.7}px system-ui, -apple-system, sans-serif`;
+  ctx.fillText(`${fmtDim(w, unit)} × ${fmtDim(h, unit)} ${unitSuffix(unit)}`, cw / 2, ch / 2 + fs * 0.7);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   return tex;
 }
 
