@@ -171,8 +171,8 @@ bag edges** (`widthDir`) so it meets the seams square, not twisted; a count×2 g
 to the opposite face. Additive per-piece **`role`** (`clonePiece`+editor `restore`+a Pieces-panel
 **Type: Auto/Panel/Strap** select). `strapRibbonGeometry` gained an optional `frame` ({normal}|
 {widthDir}) — the box ribbon path stays byte-identical. Tests: `verify-fold.mjs` (59) +
-`verify-fold-mesh.mjs` (15); box-mesh/print spine/calibration gate untouched. **Still deferred:**
-count×2 *span* renders one handle (not a parallel pair); strap bands are plain leather (no pattern
-texture); notch `{edge,t,type}` + anchors UI; dart self-seams; atelier re-skin. **Next: M4** (Step 3a
-inflated bag). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md` + `PREVIEW.md`;
+`verify-fold-mesh.mjs` (15); box-mesh/print spine/calibration gate untouched. A count×2 *span*
+strap renders as a **parallel pair** (offset along the bag edges); a count×2 *grab* mirrors to the
+opposite face. **Still deferred:** strap bands are plain leather (no pattern texture); notch
+`{edge,t,type}` + anchors UI; dart self-seams; atelier re-skin. **Next: M4** (Step 3a inflated bag). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md` + `PREVIEW.md`;
 `HANDOFF-strap.md` was the strap starting orders, `HANDOFF-M3-fold.md` the M3 ones.

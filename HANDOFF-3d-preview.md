@@ -157,9 +157,9 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
         leather band per handle — a **grab** handle (both ends on one edge) is a planar rainbow,
         a **span** (e.g. side-to-side over the top) **sweeps its width along the bag edges** so it
         meets the seams square; count×2 grab auto-mirrors. Additive per-piece `role` + a Pieces-
-        panel **Type: Auto/Panel/Strap**. Tests `verify-fold.mjs` (59) + `verify-fold-mesh.mjs`
-        (15). *Deferred: count×2 span → one handle (not a parallel pair); plain-leather bands (no
-        pattern texture).*
+        panel **Type: Auto/Panel/Strap**. count×2 span → **parallel pair** (offset along the bag
+        edges); count×2 grab → opposite-face mirror. Tests `verify-fold.mjs` (62) +
+        `verify-fold-mesh.mjs` (15). *Deferred: plain-leather bands (no pattern texture).*
 - [ ] **M4** — Step 3a inflated bag (`pattern-mesh.js` poly2tri triangulation;
       `pattern-cloth.js` XPBD distance/bend/seam/pressure; the §6.6 stability protocol;
       `preview3d` settled cache). *~6–10.*

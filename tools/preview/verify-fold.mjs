@@ -231,29 +231,40 @@ console.log("=== Fixture H: tote with a strap (excluded from the fold, rendered 
   ok(mir && (len(sub(mir.anchors[0], A)) > 30 || len(sub(mir.anchors[1], B)) > 30), "mirror handle is offset from the original (opposite face)");
 }
 
-console.log("=== Fixture J: strap SPANS the two sides (width runs along the side edges) ===");
+console.log("=== Fixture J: strap SPANS the two sides (width along edges; ×2 → parallel pair) ===");
 {
-  const { pieces, seams } = tote();
-  const strap = rect("p_strap", "Strap", 600, 25); strap.count = 2;
-  pieces.push(strap);
-  // strap short ends sewn to the LEFT and RIGHT side top edges (side edge 2) — an over-the-top span
-  seams.push(
-    { id: "s_strap_l", a: { piece: "p_strap", edge: 3 }, b: { piece: "p_sideL", edge: 2 }, foldAngle: null },
-    { id: "s_strap_r", a: { piece: "p_strap", edge: 1 }, b: { piece: "p_sideR", edge: 2 }, foldAngle: null },
-  );
-  const res = F.foldDoc(pieces, seams);
-  ok(res.mode === "closed", `bag still closes, got ${res.mode}`);
-  ok(res.straps.length === 1, `span → one handle (no mirror), got ${res.straps.length}`);
-  const st = res.straps[0];
-  ok(st.grab === false, "span handle (not a grab handle)");
-  ok(Array.isArray(st.widthDir), "widthDir reported");
-  const wd = st.widthDir, A = st.anchors[0], B = st.anchors[1];
-  ok(Math.abs(wd[1]) < 0.2, `widthDir is horizontal (|y|≈0), got y=${wd[1].toFixed(2)}`);
-  // chord (span direction) should be ~perpendicular to the width (the strap meets the side edges square)
-  const chord = sub(B, A), cl = len(chord) || 1; const cdir = [chord[0]/cl, chord[1]/cl, chord[2]/cl];
-  const dotcw = Math.abs(cdir[0]*wd[0] + cdir[1]*wd[1] + cdir[2]*wd[2]);
-  ok(dotcw < 0.3, `width ⊥ span direction (|cos|≈0), got ${dotcw.toFixed(2)}`);
-  ok(A[1] > 200 && B[1] > 200, `anchors near the bag top, got y=${A[1].toFixed(0)},${B[1].toFixed(0)}`);
+  const mk = (cnt) => {
+    const { pieces, seams } = tote();
+    const strap = rect("p_strap", "Strap", 600, 25); strap.count = cnt;
+    pieces.push(strap);
+    // strap short ends sewn to the LEFT and RIGHT side top edges (side edge 2) — an over-the-top span
+    seams.push(
+      { id: "s_strap_l", a: { piece: "p_strap", edge: 3 }, b: { piece: "p_sideL", edge: 2 }, foldAngle: null },
+      { id: "s_strap_r", a: { piece: "p_strap", edge: 1 }, b: { piece: "p_sideR", edge: 2 }, foldAngle: null },
+    );
+    return F.foldDoc(pieces, seams);
+  };
+  const dotv = (a, b) => Math.abs(a[0]*b[0] + a[1]*b[1] + a[2]*b[2]);
+  const unit = (v) => { const l = len(v) || 1; return [v[0]/l, v[1]/l, v[2]/l]; };
+
+  // cut ×1 → a single over-the-top handle
+  const r1 = mk(1);
+  ok(r1.mode === "closed", `(×1) bag closes, got ${r1.mode}`);
+  ok(r1.straps.length === 1, `(×1) span → one handle, got ${r1.straps.length}`);
+  ok(r1.straps[0].grab === false, "(×1) span handle (not grab)");
+  const wd1 = r1.straps[0].widthDir, A1 = r1.straps[0].anchors[0], B1 = r1.straps[0].anchors[1];
+  ok(Math.abs(wd1[1]) < 0.2, `(×1) widthDir horizontal, got y=${wd1[1].toFixed(2)}`);
+  ok(dotv(unit(sub(B1, A1)), wd1) < 0.3, "(×1) width ⊥ span direction (meets the side edges square)");
+  ok(A1[1] > 200 && B1[1] > 200, `(×1) anchors near the bag top, got y=${A1[1].toFixed(0)}`);
+
+  // cut ×2 → two PARALLEL handles offset along the side-edge direction
+  const r2 = mk(2);
+  ok(r2.straps.length === 2, `(×2) span → parallel pair, got ${r2.straps.length}`);
+  const [h0, h1] = r2.straps;
+  ok(h0.grab === false && h1.grab === false, "(×2) both span handles");
+  const off = sub(h1.anchors[0], h0.anchors[0]);
+  ok(len(off) > 1 && dotv(unit(off), h0.widthDir) > 0.9, `(×2) pair offset ALONG widthDir (parallel, not crossed), got d=${len(off).toFixed(1)}`);
+  ok(dotv(unit(sub(h0.anchors[1], h0.anchors[0])), h0.widthDir) < 0.3, "(×2) width still ⊥ span direction");
 }
 
 console.log("=== Fixture I: isStrapPiece predicate (role / name / shape) ===");

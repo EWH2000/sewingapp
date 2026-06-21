@@ -168,6 +168,6 @@ Strap pieces now render as **flexible arched leather handles** on the folded bag
   test)").
 
 **Decisions made:** auto-detect **+** explicit editor toggle; count×2 *grab* mirrors to both
-faces. **Still deferred:** count×2 *span* renders a single handle (not a parallel pair); bands are
-plain leather (no pattern texture); notch `{edge,t,type}` + anchors UI; dart self-seams; atelier
-re-skin. **Next: M4** (Step 3a inflated bag).
+faces; count×2 *span* renders a **parallel pair** (offset along the bag edges). **Still deferred:**
+bands are plain leather (no pattern texture); notch `{edge,t,type}` + anchors UI; dart self-seams;
+atelier re-skin. **Next: M4** (Step 3a inflated bag).
