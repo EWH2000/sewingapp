@@ -206,6 +206,7 @@
       if (row) {
         const id = row.dataset.patternId;
         if (action === "saved-edit") { location.href = api("/edit/" + id); return; }
+        if (action === "saved-preview") { location.href = api("/preview/" + id); return; }
         if (action === "saved-delete") {
           if (!(await confirmSheet("Delete this pattern?", "Delete"))) return;
           let r; try { r = await fetch(api("/patterns/" + id), { method: "DELETE" }); } catch { r = null; }

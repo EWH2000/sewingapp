@@ -1,0 +1,13 @@
+{
+  "name": "preview",
+  "version": "1.0.0",
+  "description": "Headless harnesses for the 3D-preview geometry (box mesh, fold, cloth, body form). Pins three (+ later poly2tri) to the EXACT version vendored into app/static/js/vendor/, so the Node tests run the same code the browser does.",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"run the verify-*.mjs files directly with node\" && exit 1"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "three": "0.184.0"
+  }
+}

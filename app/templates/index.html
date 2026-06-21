@@ -105,6 +105,7 @@
         <button class="btn btn--primary" data-action="saved-print">Print</button>
         <button class="btn" data-action="saved-download">Download</button>
         {% if p.kind in ('freeform', 'rectangle', 'box') %}<button class="btn" data-action="saved-edit">Edit</button>{% endif %}
+        {% if p.kind in ('freeform', 'box') %}<button class="btn" data-action="saved-preview">Preview</button>{% endif %}
       </div>
     </div>
   {% endfor %}

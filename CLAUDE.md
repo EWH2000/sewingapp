@@ -6,8 +6,9 @@ later. Built for the owner's partner, who sews from purchased PDF patterns; this
 authors *new* ones. First focus: bags (boxy tote), evolving toward garments.
 
 Hub tile **"Sewing"** (scissors) → `/sewing/` → **:8006**. House-styled like the
-other apps. See `DESIGN.md` (architecture + decisions) and `PRINTING.md` (the
-verified direct-IPP print design). Server-wide rules: `~/CLAUDE.md`.
+other apps. See `DESIGN.md` (architecture + decisions), `PRINTING.md` (the
+verified direct-IPP print design), and `PREVIEW.md` (**plan-only** roadmap for a 3D
+assembled-product preview → garment cloth-drape). Server-wide rules: `~/CLAUDE.md`.
 
 ## Stack (mirrors cercoachapp)
 FastAPI + Jinja2 + SQLite (sqlmodel), one rootless-podman container via a
@@ -115,3 +116,22 @@ per-piece geom cache keeps pan/zoom off Maker.js. Backward-compatible: layout-le
 auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-corner
 radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
 the only part not auto-tested — verify by drawing.
+
+**3D assembled preview — M0 DONE; iPad gate cleared (2026-06-21); M1 next.** Full build spec in
+`PREVIEW.md`: an in-browser three.js preview of the *sewn-up* product, on the road to a
+soft-body **garment cloth-drape** (the real goal — she's making skirts + tank-style
+dresses; sleeveless-first by design, sleeves are an additive M6 escape hatch, nothing
+thrown away). Keystone = a new top-level **seam graph** (`seams[]`, schema 2→3, additive,
+no DB migration). Three steps / six milestones (M0–M6): box preview → seam authoring +
+rigid spanning-tree fold → XPBD cloth drape on a procedural parametric dress form.
+Architecture inherited unchanged: browser-side geometry, **no build step** (three.js via
+native import map; hand-rolled pure-JS solver — deliberately doesn't trip DESIGN.md's
+FreeSewing build-step trigger), server stays a dumb store/relay, **print spine + the
+calibration gate untouched** (preview is read-only of the doc). Lives on a separate
+`/preview/{id}` page with a separable Step-3 module. **M0 DONE:** `/preview/{id}` renders
+an orbitable cube via a no-build three.js import map (vendored r184 in
+`app/static/js/vendor/three/` — `three.module.js` + `three.core.js` + `OrbitControls`,
+loaded only on `/preview`; route mirrors `/edit`); `preview.js` is the ESM entry; print
+spine + calibration gate untouched. **Next: M1** (`docToMesh` + per-face pattern
+texturing). **Build-tracking + starting orders: `HANDOFF-3d-preview.md`** (locked
+decisions, milestone ladder, files to create, don't-break checklist).

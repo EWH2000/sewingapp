@@ -1,0 +1,24 @@
+three.js — vendored, no build step (MIT).
+
+Pinned version: 0.184.0 (r184)
+
+Files (vendored as-is from the npm `three@0.184.0` package):
+  three.module.js                     <- build/three.module.js
+  three.core.js                       <- build/three.core.js  (since r160 the module
+                                         build is a thin wrapper that re-exports from
+                                         ./three.core.js — BOTH must be vendored, or
+                                         the browser 404s on three.core.js)
+  addons/controls/OrbitControls.js    <- examples/jsm/controls/OrbitControls.js
+(build/three.tsl.js + three.webgpu*.js are NOT needed on the WebGL path — skip them.)
+
+Loaded only on /preview (and never on Home/Draw) via a native import map in
+app/templates/preview.html:
+  "three"         -> ./three.module.js   (cache-busted with ?v={{ asset_ver }})
+  "three/addons/" -> ./addons/           (rides ASSET_VER; the prefix can't carry ?v)
+
+UPDATE PROCEDURE (load-bearing): three core and EVERY examples/jsm addon MUST come
+from the SAME release tag — mixing an r184 core with an r180 addon throws at runtime.
+To update, bump the version in tools/preview/package.json, `npm install` there, then
+re-copy BOTH files from node_modules/three as a matched set and update this README.
+Dropping the new bytes auto-rolls ASSET_VER (app/main.py _compute_asset_ver), so the
+iPad cache busts with no code change.

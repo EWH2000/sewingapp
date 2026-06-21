@@ -147,6 +147,21 @@ async def edit_existing(request: Request, pid: int):
     })
 
 
+@app.get("/preview/{pid}", response_class=HTMLResponse)
+async def preview_pattern(request: Request, pid: int):
+    """Assembled 3D preview of a saved pattern. Read-only of the document — never
+    touches the print spine. Only id/name/kind are injected (mirrors /edit); the
+    preview fetches the full doc client-side via the existing GET /patterns/{id}."""
+    with Session(engine) as s:
+        row = s.get(Pattern, pid)
+        if not row:
+            raise HTTPException(404, "Pattern not found.")
+        pattern = {"id": row.id, "name": row.name, "kind": row.kind}
+    return templates.TemplateResponse(request, "preview.html", {
+        "active_tab": "draw", "pattern": pattern,
+    })
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}

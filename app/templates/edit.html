@@ -81,6 +81,7 @@
         <button class="btn" data-action="ed-export-dxf">Export DXF</button>
       </div>
       <button class="btn btn--ghost btn--block" data-action="ed-save" style="margin-top:10px">Save</button>
+      {% if pattern and pattern.id %}<a class="btn btn--block" href="{{ base_path }}/preview/{{ pattern.id }}" style="margin-top:8px">Preview →</a>{% endif %}
       <p class="small muted editor__hint">Export gives you a vector file (SVG/DXF) for a cutter or other software.</p>
     </div>
   </aside>

@@ -11,6 +11,12 @@ toward garments without a rewrite.
 > `caddy/dashboard` SPA*. **That premise was wrong for this box** — see below.
 > This file supersedes the handoff's *integration/shell* decisions; its
 > *engineering* (JSON document model, print spine, library choices) still stands.
+>
+> The "evolving toward garments" arc has its own forward-looking build spec:
+> **`PREVIEW.md`** — the **plan-only** roadmap for a 3D assembled-product preview that
+> lands at a soft-body garment cloth-drape. It extends this document's JSON model with a
+> seam graph (schema 2→3, additive) and explicitly stays inside the locked decisions
+> below (browser-side geometry, no build step, print spine untouched).
 
 ## How this box actually works (the corrected premise)
 `caddy/dashboard/` is a **single static `index.html`** hub launcher, not an SPA —

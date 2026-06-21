@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sewing — Preview{% endblock %}
+{% block head_extra %}
+  {# Classic geom stack (defer) — mirrors /edit. M0 doesn't use it (hardcoded cube),
+     but loading it here proves the classic globals + the ESM module below coexist on
+     the iPad, and M1's docToMesh needs window.PatternGeom.pieceGeom. #}
+  <script src="{{ base_path }}/static/js/vendor/browser.maker.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/vendor/maker-shim.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-geom.js?v={{ asset_ver }}" defer></script>
+
+  {# Same injection channel as window.SEWING_EDIT on /edit — id/name/kind only. #}
+  <script>window.SEWING_PREVIEW = {{ (pattern or {})|tojson }};</script>
+
+  {# Native import map — inline only (type="importmap" forbids src/defer) and MUST
+     come before the module that imports 'three'. ?v= busts the core on deploy; the
+     "three/addons/" prefix can't carry ?v (mangles the appended path) so addons ride
+     ASSET_VER, fine since they're vendored once as a matched set. #}
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "{{ base_path }}/static/js/vendor/three/three.module.js?v={{ asset_ver }}",
+      "three/addons/": "{{ base_path }}/static/js/vendor/three/addons/"
+    }
+  }
+  </script>
+  <script type="module" src="{{ base_path }}/static/js/preview.js?v={{ asset_ver }}"></script>
+
+  <style>
+    /* Full-bleed 3D stage. Sits between the topbar and the bottom tabbar. */
+    .preview-stage {
+      position: relative;
+      width: 100%;
+      height: calc(100dvh - 168px);
+      min-height: 320px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #1b1d21;          /* dark canvas so the lit cube reads before WebGL paints */
+      touch-action: none;           /* let OrbitControls own pinch/drag gestures */
+    }
+    .preview-stage canvas { display: block; width: 100%; height: 100%; }
+    .preview-header { margin-bottom: 10px; }
+  </style>
+{% endblock %}
+{% block wrap_class %}wrap--editor{% endblock %}
+{% block content %}
+
+<div class="preview-header">
+  <h1>{{ pattern.name if pattern else "Preview" }}</h1>
+  <p class="muted small">Drag to orbit · pinch to zoom. A shape preview — not a fabric simulator.</p>
+</div>
+
+<div class="card" style="padding:10px">
+  <div id="preview-stage" class="preview-stage">
+    <canvas id="preview-canvas"></canvas>
+  </div>
+</div>
+
+{% endblock %}
