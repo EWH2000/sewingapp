@@ -104,7 +104,7 @@
     }
   }
 
-  const toMm = (v, unit) => (unit === "in" ? v * 25.4 : v);
+  const toMm = (v, unit) => (unit === "in" ? v * 25.4 : unit === "cm" ? v * 10 : v);
 
   // ── Home page wiring ───────────────────────────────────────────────────────
   function wireHome() {
@@ -116,7 +116,7 @@
       const w = toMm(parseFloat($("#rect-w", rectForm).value), unit);
       const h = toMm(parseFloat($("#rect-h", rectForm).value), unit);
       if (!(w > 10 && h > 10 && w < 3000 && h < 3000)) {
-        setStatus("Enter a width and height between 10 mm and 3000 mm.", "warn");
+        setStatus("Enter a sensible width and height.", "warn");
         return null;
       }
       return window.PatternPDF.rectanglePattern(name, Math.round(w), Math.round(h));
@@ -130,7 +130,7 @@
       const W = n("#tote-w"), H = n("#tote-h"), D = n("#tote-d"), SA = n("#tote-sa"), SL = n("#tote-sl"), SW = n("#tote-sw");
       const dims = [W, H, D, SL, SW];
       if (!(dims.every((v) => v > 5 && v < 4000) && SA >= 0 && SA < 100)) {
-        setStatus("Check the measurements — sizes in a sensible range (seam allowance under 100 mm).", "warn");
+        setStatus("Check the measurements — keep them in a sensible range.", "warn");
         return null;
       }
       const name = ($("#tote-name", toteForm).value || "").trim();
@@ -153,15 +153,35 @@
       else setStatus("Couldn't save — try again.", "bad");
     }
 
-    // unit toggle: swap placeholders + convert the seam-allowance value in place
-    const toteUnit = $("#tote-unit", toteForm || document);
-    if (toteUnit) toteUnit.addEventListener("change", () => {
-      const inch = toteUnit.value === "in";
-      const ph = inch ? { w: "14", h: "16", d: "5", sl: "24", sw: "1" } : { w: "350", h: "400", d: "120", sl: "600", sw: "25" };
-      for (const k of ["w", "h", "d", "sl", "sw"]) { const el = $("#tote-" + k, toteForm); if (el) el.placeholder = ph[k]; }
-      const sa = $("#tote-sa", toteForm), v = parseFloat(sa.value);
-      if (isFinite(v)) sa.value = inch ? +(v / 25.4).toFixed(2) : Math.round(v * 25.4);
-    });
+    // Units (inches default + cm) — persisted in the shared "sewing.unit" key so the home
+    // builders, the editor, and the preview all agree. Both home selects stay in sync; the
+    // seam-allowance value (baked into the HTML in inches) converts as the unit changes.
+    const savedUnit = () => { try { return localStorage.getItem("sewing.unit") || "in"; } catch (_) { return "in"; } };
+    const PH = {
+      in: { tote: { w: "14", h: "16", d: "5", sl: "24", sw: "1" }, rect: { w: "12", h: "15" } },
+      cm: { tote: { w: "35", h: "40", d: "12", sl: "60", sw: "2.5" }, rect: { w: "30", h: "38" } },
+    };
+    let curUnit = "in";   // the HTML defaults (placeholders + the seam-allowance value) are inches
+    function applyUnit(u, convertSA) {
+      const set = PH[u] || PH.in;
+      if (toteForm) for (const k of ["w", "h", "d", "sl", "sw"]) { const el = $("#tote-" + k, toteForm); if (el) el.placeholder = set.tote[k]; }
+      if (rectForm) for (const k of ["w", "h"]) { const el = $("#rect-" + k, rectForm); if (el) el.placeholder = set.rect[k]; }
+      const tu = $("#tote-unit", document), ru = $("#rect-unit", document);
+      if (tu) tu.value = u; if (ru) ru.value = u;
+      if (convertSA && toteForm) {
+        const sa = $("#tote-sa", toteForm), v = sa && parseFloat(sa.value);
+        if (sa && isFinite(v)) {
+          const mm = curUnit === "in" ? v * 25.4 : curUnit === "cm" ? v * 10 : v;
+          sa.value = u === "in" ? +(mm / 25.4).toFixed(2) : u === "cm" ? +(mm / 10).toFixed(1) : Math.round(mm);
+        }
+      }
+      curUnit = u;
+      try { localStorage.setItem("sewing.unit", u); } catch (_) { /* private mode */ }
+    }
+    applyUnit(savedUnit(), true);   // init: convert the inch-baked SA to the saved unit
+    const tu = $("#tote-unit", document), ru = $("#rect-unit", document);
+    if (tu) tu.addEventListener("change", () => applyUnit(tu.value, true));
+    if (ru) ru.addEventListener("change", () => applyUnit(ru.value, true));
 
     document.addEventListener("click", async (e) => {
       const btn = e.target.closest("[data-action]");

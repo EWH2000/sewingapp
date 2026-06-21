@@ -41,7 +41,7 @@
   const state = {
     id: null, name: "", kind: "freeform",
     pieces: [], active: 0,                 // each {id,name,count,seamMm,cornerRadius,closed,nodes,notches,placements,layout}
-    snapOn: true, notchMode: false, unit: "mm", gridMm: 5,
+    snapOn: true, notchMode: false, unit: "in", gridMm: 5,
     cam: { k: 1, tx: 0, ty: 0 },
     selection: { type: "none", index: -1 },   // vertex | edge | placement | none
     history: [], hindex: -1,
@@ -129,14 +129,17 @@
   }
 
   // ── units / formatting ──────────────────────────────────────────────────────
-  const toMm = (v) => (state.unit === "in" ? v * 25.4 : v);
-  const unitLabel = () => (state.unit === "in" ? "inches" : "mm");
-  const unitShort = () => (state.unit === "in" ? "in" : "mm");
+  // Display/input units only — the document is always real millimetres (print-safe).
+  // inches (default) + cm; mm is no longer offered (legacy fallthrough kept harmless).
+  const toMm = (v) => (state.unit === "in" ? v * 25.4 : state.unit === "cm" ? v * 10 : v);
+  const unitLabel = () => (state.unit === "in" ? "inches" : state.unit === "cm" ? "centimetres" : "mm");
+  const unitShort = () => (state.unit === "in" ? "in" : state.unit === "cm" ? "cm" : "mm");
   function fmtVal(mm) {
     if (state.unit === "in") return (mm / 25.4).toFixed(2);
+    if (state.unit === "cm") return (Math.round(mm) / 10).toFixed(1);
     const r = Math.round(mm * 10) / 10; return String(Number.isInteger(r) ? r : r.toFixed(1));
   }
-  const fmtLen = (mm) => fmtVal(mm) + (state.unit === "in" ? '"' : " mm");
+  const fmtLen = (mm) => fmtVal(mm) + (state.unit === "in" ? '"' : state.unit === "cm" ? " cm" : " mm");
 
   // ── camera + fit ────────────────────────────────────────────────────────────
   const W2S = (n) => G.worldToScreen(n.x, n.y, state.cam);
@@ -308,7 +311,7 @@
         const bb = G.bbox(G.nodesToPoints(p.nodes, p.closed));
         return `<button class="piece-row${i === state.active ? " on" : ""}" data-action="ed-select-piece" data-piece="${i}">`
           + `<span class="piece-row__name">${escapeHtml(p.name)}</span>`
-          + `<span class="piece-row__meta">${Math.round(bb.w)}×${Math.round(bb.h)} mm${p.count > 1 ? " · cut " + p.count : ""}</span>`
+          + `<span class="piece-row__meta">${fmtVal(bb.w)}×${fmtVal(bb.h)} ${unitShort()}${p.count > 1 ? " · cut " + p.count : ""}</span>`
           + `</button>`;
       }).join("");
     }
@@ -802,7 +805,15 @@
       nameInput.addEventListener("change", () => { state.name = nameInput.value; commit(); });
     }
     const unitSel = $("#ed-unit");
-    if (unitSel) unitSel.addEventListener("change", () => { state.unit = unitSel.value; setReadoutForSelection(); render(); });
+    if (unitSel) {
+      try { const u = localStorage.getItem("sewing.unit"); if (u) state.unit = u; } catch (_) { /* private mode */ }
+      unitSel.value = state.unit;
+      unitSel.addEventListener("change", () => {
+        state.unit = unitSel.value;
+        try { localStorage.setItem("sewing.unit", state.unit); } catch (_) { /* private mode */ }
+        setReadoutForSelection(); updateSnapChip(); render();
+      });
+    }
 
     resetHistory();
     ensureInitialFit(12);
@@ -856,7 +867,7 @@
   function updateSnapChip() {
     const c = $("#ed-snap"); if (!c) return;
     c.classList.toggle("on", state.snapOn);
-    c.textContent = state.snapOn ? "Snap " + state.gridMm + " mm" : "Snap off";
+    c.textContent = state.snapOn ? "Snap " + fmtVal(state.gridMm) + " " + unitShort() : "Snap off";
   }
   function toggleNotch() {
     state.notchMode = !state.notchMode; updateNotchChip();

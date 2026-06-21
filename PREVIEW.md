@@ -872,9 +872,11 @@ focused sessions; estimates, not commitments — 3b especially.)
   (`three.module.js` + `three.core.js` + OrbitControls) + a `/preview/{id}` route +
   `preview.html` + `preview.js`, rendering a hardcoded orbitable cube. **Gate cleared:**
   import map + touch orbit confirmed on her actual iPad; print spine untouched.
-- [ ] **M1 — Step 1 box preview (~2–4).** `docToMesh` + per-face pattern texturing for
-  the boxy tote; `verify-box-mesh.mjs`. **Gate:** a real saved tote previews correctly
-  and reads as the pattern.
+- [x] **M1 — Step 1 box preview (~2–4). DONE 2026-06-21.** `docToMesh` + per-face pattern
+  texturing for the boxy tote; `verify-box-mesh.mjs` (18 checks). Gate cleared on her iPad —
+  proportioned, pattern-textured box; flat leather straps (arc length = strap length); a
+  studio/atelier look + "finished measurements" spec plate; inches/cm units. (`preview3d.js`
+  imports only `three` so the test runs in Node via `tools/preview/three-resolver.mjs`.)
 - [ ] **M2 — Seam graph + Sew mode (~3–5).** Schema-3 `seams[]`, edge-identity, Sew-mode
   selection UX on `/edit`, seam list, dart self-seam emission. **Gate:** she can author
   the worked-tote seam graph by tapping edges, and it round-trips through save.

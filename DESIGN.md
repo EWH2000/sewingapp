@@ -38,6 +38,30 @@ So this tool is a **sibling app**, not a dashboard module.
 | Front-end libs | **Vendored ESM, no build step — for now** | Matches the box's "drop files & refresh" convention; works on the LAN offline. Through the bag phases the deps are `pdf-lib` (+ maybe `Maker.js`), which drop in without bundling. **Trigger to add a build step (Vite/esbuild): when we embed FreeSewing `@freesewing/core`** (garments era) — its dependency graph makes hand-vendoring impractical |
 | Root needed? | **None** — high port, rootless, all `systemctl --user` | Unlike most tasks on this box, no root-SSH handoff |
 
+## Visual identity — the atelier theme (evolving, noted 2026-06-21)
+Sewing is a **much larger tool** than the other house apps, so (per the owner) it earns its
+own distinctive visual identity rather than staying bound to the generic house shell (light
+cards + the `#e0653a` orange accent). **Precedent:** the advanced climate app carries its own
+BMS-style theme tailored to its domain; Sewing should likewise grow an **atelier /
+haberdashery** identity — the materials of her world (paper patterns, fabric, leather
+handles, brass hardware, a studio cutting table).
+
+- **First instance — the 3D preview page (`/preview`, built 2026-06-21).** A deliberate
+  break from the card-stack into an immersive "showroom": a studio-graphite gradient
+  backdrop behind a transparent WebGL canvas, paper-white pattern panels as the hero, a
+  **muted saddle-tan leather** strap (calmer cousin of the house orange), a **brass**
+  hairline as the signature accent, and a translucent **"Finished measurements" spec plate**
+  styled like a pattern envelope (tracked caps, tabular figures). Palette seed (scoped to the
+  preview today): paper `#f4efe6`, muted `#a8a39a`, brass `#c8a86b`, leather `#b27c4f`,
+  studio sweep `#3a3f48 → #15171b`.
+- **The rest is a noted, separate workstream (not yet built).** The Draw/editor and Home
+  surfaces can adopt the atelier theme incrementally — promote the preview's palette seed to
+  shared design tokens (CSS custom properties) and restyle the editor canvas/rail + home
+  builders into the studio aesthetic. **Take liberties where they clearly help now; don't
+  derail the 3D-preview milestone ladder (M0–M5) to do a full re-skin.**
+- **Non-negotiable regardless of theme:** the print spine, the 1:1 tiler, and the
+  calibration gate are untouched — theming is presentation only.
+
 ## Architecture spine (unchanged from the handoff)
 Store a pattern as ONE structured JSON document: pieces → paths of points + curve
 segments, in **real millimeters**, plus metadata (grainline, notches, seam

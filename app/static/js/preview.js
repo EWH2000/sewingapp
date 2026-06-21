@@ -1,72 +1,66 @@
-// preview.js — assembled 3D preview, M0 (the loader spike).
+// preview.js — assembled 3D preview, page entry (M1).
 //
-// Goal of M0: prove the no-build three.js import-map delivery path renders and
-// touch-orbits on the iPad. A hardcoded cube, zero pattern geometry, zero physics.
-// M1 will extract the scene + a real docToMesh() into a sibling preview3d.js and
-// texture each face with the pattern outline; for now everything lives here so there
-// is no relative ESM import (and thus no addon-style cache wrinkle) to debug.
+// Fetches the saved pattern document and builds the sewn-up shape: for a boxy tote, an
+// orbitable 3D box whose faces are textured with their pattern pieces, on a soft studio
+// backdrop with a leather-tan handle and a "finished measurements" spec plate. Geometry/
+// texturing live in preview3d.js (imports only 'three', so it stays headless-testable);
+// this entry owns the scene, renderer, OrbitControls (touch), the doc fetch, and the overlay.
 //
-// three.js is real ESM, imported by name via the page's import map — there is
-// deliberately NO window.THREE shim (that classic-bundle pattern is only for Maker.js).
+// The WebGL canvas is transparent (alpha) so the CSS studio gradient on .preview-stage
+// shows through behind the bag.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { docToMesh, panelCanvasTexture, frameObject, contactShadow } from 'preview3d';
 
-const doc = window.SEWING_PREVIEW || {};   // id/name/kind only in M0; the cube ignores it.
+const BASE = window.SEWING_BASE || '';
+const ident = window.SEWING_PREVIEW || {};
+const UNIT = (() => { try { return localStorage.getItem('sewing.unit') || 'in'; } catch (_) { return 'in'; } })();
+const uSuf = UNIT === 'cm' ? 'cm' : 'in';
+const dim = (mm) => String(Math.round((UNIT === 'cm' ? mm / 10 : mm / 25.4) * 10) / 10);
 
 const canvas = document.getElementById('preview-canvas');
 const stage = document.getElementById('preview-stage');
+const msgEl = document.getElementById('preview-msg');
+const specEl = document.getElementById('pv-spec');
+const specGrid = document.getElementById('pv-spec-grid');
+const hintEl = document.getElementById('pv-hint');
+const setMsg = (t) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.hidden = !t; } };
+const show = (el, on) => { if (el) el.hidden = !on; };
+
 if (!canvas || !stage) {
   console.error('[preview] missing #preview-canvas / #preview-stage');
 } else {
-  start();
+  init();
 }
 
-function start() {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+async function init() {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);   // transparent -> the CSS studio gradient shows through
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1b1d21);
+  const camera = new THREE.PerspectiveCamera(45, 1, 1, 100000);
+  camera.position.set(600, 500, 900);    // frameObject overrides once the bag loads
 
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-  camera.position.set(2.6, 2.0, 3.6);
-
-  // Lighting: hemisphere fill + a directional key, so the cube's faces shade
-  // differently as you orbit — that shading change is the visible proof of 3D.
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.1));
-  const key = new THREE.DirectionalLight(0xffffff, 1.4);
-  key.position.set(4, 6, 3);
-  scene.add(key);
-
-  // The cube — house accent colour, with crisp edge outlines so rotation is unmistakable.
-  const geo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
-  const cube = new THREE.Mesh(
-    geo,
-    new THREE.MeshStandardMaterial({ color: 0xe0653a, roughness: 0.55, metalness: 0.0 }),
-  );
-  scene.add(cube);
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geo),
-    new THREE.LineBasicMaterial({ color: 0xfdfdfb }),
-  );
-  cube.add(edges);
+  // Warm key + cool fill + subtle rim — depth and a calmer, studio look (not flat white).
+  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x2a2f36, 0.9));
+  const key = new THREE.DirectionalLight(0xfff1dd, 1.25); key.position.set(0.7, 1.3, 0.9); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xcfe0ff, 0.55); fill.position.set(-1, 0.4, -0.6); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(-0.5, 0.7, -1.2); scene.add(rim);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;     // smooth touch orbit
+  controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.target.set(0, 0, 0);
 
   function resize() {
     const w = stage.clientWidth, h = stage.clientHeight;
     if (!w || !h) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h, false);   // false: CSS owns the canvas size; we set only the drawing buffer
+    renderer.setSize(w, h, false);
   }
   resize();
-  // ResizeObserver catches orientation changes + the stage's dvh-based height; window
-  // resize is the belt-and-suspenders fallback for older WebKit.
   if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
   window.addEventListener('resize', resize);
 
@@ -75,5 +69,41 @@ function start() {
     renderer.render(scene, camera);
   });
 
-  console.log('[preview] M0 cube ready', doc && doc.name ? `(pattern: ${doc.name})` : '');
+  // Fetch the full document (the route injects only id/name/kind — same as /edit).
+  setMsg('Loading…');
+  let pat = null;
+  try {
+    if (ident.id != null) {
+      const r = await fetch(BASE + '/patterns/' + ident.id);
+      if (r.ok) pat = await r.json();
+    }
+  } catch (e) { console.warn('[preview] fetch failed', e); }
+
+  if (!pat) { setMsg('Could not load this pattern.'); return; }
+  if (pat.kind !== 'box') {
+    setMsg('3D preview supports boxy totes so far — garments and freeform shapes are coming.');
+    return;
+  }
+
+  const group = docToMesh(pat, { makeTexture: (p) => panelCanvasTexture(p, UNIT) });
+  scene.add(group);
+  const sh = contactShadow(+pat.params.widthMm, +pat.params.depthMm);
+  if (sh) scene.add(sh);
+  frameObject(camera, controls, group, 1.35);
+  resize();
+
+  fillSpec(pat);
+  setMsg(''); show(specEl, true); show(hintEl, true);
+  console.log('[preview] box mesh ready:', pat.name);
+}
+
+// The "finished measurements" spec plate — the strap length lives here.
+function fillSpec(pat) {
+  if (!specGrid) return;
+  const p = pat.params || {};
+  const row = (k, v) => `<div class="pv-spec__row"><span class="pv-spec__k">${k}</span><span class="pv-spec__v">${v} <em>${uSuf}</em></span></div>`;
+  let html = '';
+  if (p.widthMm && p.heightMm && p.depthMm) html += row('Bag', `${dim(p.widthMm)} × ${dim(p.heightMm)} × ${dim(p.depthMm)}`);
+  if (p.strapLenMm && p.strapWidthMm) html += row('Strap', `${dim(p.strapLenMm)} × ${dim(p.strapWidthMm)}`);
+  specGrid.innerHTML = html;
 }

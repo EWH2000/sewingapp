@@ -127,7 +127,10 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
 - [x] **M0** — loader spike (cube on iPad). *DONE — built + iPad gate cleared 2026-06-21
       (orbitable cube via no-build three.js r184 import map; `/preview/{id}` page; print
       spine untouched).*
-- [ ] **M1** — Step 1 box preview (`docToMesh` + face texturing). *~2–4.*
+- [x] **M1** — Step 1 box preview (`docToMesh` + face texturing). *DONE 2026-06-21 — boxy
+      tote previews as a proportioned, pattern-textured box; flat leather straps (arc-len =
+      strap length); studio/atelier look + "finished measurements" spec plate; inches/cm
+      units; `tools/preview/verify-box-mesh.mjs` (18 checks).*
 - [ ] **M2** — seam graph + **Sew mode** (schema-3 `seams[]`, edge identity, cross-piece
       edge-pair selection UX on `/edit`, dart self-seam emission). *~3–5.*
 - [ ] **M3** — Step 2 rigid fold-up (`pattern-fold.js`: spanning tree + Levenberg–

@@ -117,7 +117,7 @@ auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-
 radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
 the only part not auto-tested — verify by drawing.
 
-**3D assembled preview — M0 DONE; iPad gate cleared (2026-06-21); M1 next.** Full build spec in
+**3D assembled preview — M0 + M1 DONE; iPad gates cleared (2026-06-21); M2 next.** Full build spec in
 `PREVIEW.md`: an in-browser three.js preview of the *sewn-up* product, on the road to a
 soft-body **garment cloth-drape** (the real goal — she's making skirts + tank-style
 dresses; sleeveless-first by design, sleeves are an additive M6 escape hatch, nothing
@@ -128,10 +128,15 @@ Architecture inherited unchanged: browser-side geometry, **no build step** (thre
 native import map; hand-rolled pure-JS solver — deliberately doesn't trip DESIGN.md's
 FreeSewing build-step trigger), server stays a dumb store/relay, **print spine + the
 calibration gate untouched** (preview is read-only of the doc). Lives on a separate
-`/preview/{id}` page with a separable Step-3 module. **M0 DONE:** `/preview/{id}` renders
-an orbitable cube via a no-build three.js import map (vendored r184 in
+`/preview/{id}` page with a separable Step-3 module. **M0 + M1 DONE:** `/preview/{id}`
+renders the assembled bag in 3D via a no-build three.js import map (vendored r184 in
 `app/static/js/vendor/three/` — `three.module.js` + `three.core.js` + `OrbitControls`,
-loaded only on `/preview`; route mirrors `/edit`); `preview.js` is the ESM entry; print
-spine + calibration gate untouched. **Next: M1** (`docToMesh` + per-face pattern
-texturing). **Build-tracking + starting orders: `HANDOFF-3d-preview.md`** (locked
-decisions, milestone ladder, files to create, don't-break checklist).
+loaded only on `/preview`; route mirrors `/edit`; `preview.js` ESM entry + `preview3d.js`
+`docToMesh`, headless-tested by `tools/preview/verify-box-mesh.mjs`). A boxy tote previews
+as a correctly-proportioned, pattern-textured box (per-face `CanvasTexture` from
+`pieceGeom`) with flat leather straps + a studio **atelier** look (DESIGN.md "Visual
+identity"). Also this session: **app-wide display units default to inches + cm (mm dropped)**,
+persisted in `localStorage["sewing.unit"]`, shared by home/editor/preview — the document
+stays in mm, so the print spine + calibration gate are untouched. **Next: M2** (seam graph +
+Sew mode). **Build-tracking + starting orders: `HANDOFF-3d-preview.md`** (locked decisions,
+milestone ladder, files to create, don't-break checklist).

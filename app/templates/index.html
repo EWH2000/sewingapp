@@ -47,19 +47,19 @@
   <p class="small muted" style="margin:.3rem 0 .9rem">A flat-bottomed tote — front, back, two sides, a base, and two straps, each with seam allowance and a stitch line. Enter the <em>finished</em> bag size.</p>
   <label class="fld"><span>Name</span><input type="text" id="tote-name" placeholder="e.g. Market tote"></label>
   <div class="grid2">
-    <label class="fld"><span>Width</span><input type="number" id="tote-w" min="1" step="1" inputmode="decimal" placeholder="350"></label>
-    <label class="fld"><span>Height</span><input type="number" id="tote-h" min="1" step="1" inputmode="decimal" placeholder="400"></label>
+    <label class="fld"><span>Width</span><input type="number" id="tote-w" min="0" step="any" inputmode="decimal" placeholder="14"></label>
+    <label class="fld"><span>Height</span><input type="number" id="tote-h" min="0" step="any" inputmode="decimal" placeholder="16"></label>
   </div>
   <div class="grid2">
-    <label class="fld"><span>Depth</span><input type="number" id="tote-d" min="1" step="1" inputmode="decimal" placeholder="120"></label>
-    <label class="fld"><span>Seam allowance</span><input type="number" id="tote-sa" min="0" step="1" inputmode="decimal" value="10"></label>
+    <label class="fld"><span>Depth</span><input type="number" id="tote-d" min="0" step="any" inputmode="decimal" placeholder="5"></label>
+    <label class="fld"><span>Seam allowance</span><input type="number" id="tote-sa" min="0" step="any" inputmode="decimal" value="0.4"></label>
   </div>
   <div class="grid2">
-    <label class="fld"><span>Strap length</span><input type="number" id="tote-sl" min="1" step="1" inputmode="decimal" placeholder="600"></label>
-    <label class="fld"><span>Strap width</span><input type="number" id="tote-sw" min="1" step="1" inputmode="decimal" placeholder="25"></label>
+    <label class="fld"><span>Strap length</span><input type="number" id="tote-sl" min="0" step="any" inputmode="decimal" placeholder="24"></label>
+    <label class="fld"><span>Strap width</span><input type="number" id="tote-sw" min="0" step="any" inputmode="decimal" placeholder="1"></label>
   </div>
   <label class="fld" style="margin-bottom:14px"><span>Units</span>
-    <select id="tote-unit"><option value="mm">millimetres</option><option value="in">inches</option></select>
+    <select id="tote-unit"><option value="in">inches</option><option value="cm">centimetres</option></select>
   </label>
   <div class="btnrow">
     <button class="btn btn--primary" data-action="tote-print">Print at home</button>
@@ -74,11 +74,11 @@
   <form id="rect-form" onsubmit="return false" style="padding:0 16px 16px">
     <label class="fld"><span>Name</span><input type="text" id="rect-name" placeholder="e.g. Side panel"></label>
     <div class="grid2">
-      <label class="fld"><span>Width</span><input type="number" id="rect-w" min="1" step="0.1" inputmode="decimal" placeholder="300"></label>
-      <label class="fld"><span>Height</span><input type="number" id="rect-h" min="1" step="0.1" inputmode="decimal" placeholder="380"></label>
+      <label class="fld"><span>Width</span><input type="number" id="rect-w" min="0" step="any" inputmode="decimal" placeholder="12"></label>
+      <label class="fld"><span>Height</span><input type="number" id="rect-h" min="0" step="any" inputmode="decimal" placeholder="15"></label>
     </div>
     <label class="fld"><span>Units</span>
-      <select id="rect-unit"><option value="mm">millimetres</option><option value="in">inches</option></select>
+      <select id="rect-unit"><option value="in">inches</option><option value="cm">centimetres</option></select>
     </label>
     <div class="btnrow">
       <button class="btn btn--primary" data-action="rect-print">Print at home</button>
