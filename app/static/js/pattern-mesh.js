@@ -171,7 +171,54 @@
     return { nodes, boundary, boundaryMeta, tris, dist: distC, bend: bendC };
   }
 
+  // ── seam correspondence (§6.3) ──────────────────────────────────────────────────
+  // The boundary mesh nodes lying on one authored edge, from t=0 to t=1 inclusive. The
+  // resampler tags interior-of-edge nodes with that edge; the edge's far endpoint is the
+  // next edge's t=0 node, so we append it as t=1. Returns [{node, t}…] sorted by t.
+  function edgeNodes(mesh, edge) {
+    const B = mesh.boundary, Meta = mesh.boundaryMeta, L = B.length;
+    const on = [];
+    for (let k = 0; k < L; k++) if (Meta[k].edge === edge) on.push(k);
+    if (!on.length) return [];
+    const out = on.map((k) => ({ node: B[k], t: Meta[k].t }));
+    out.push({ node: B[(on[on.length - 1] + 1) % L], t: 1 });   // far endpoint = next edge's start
+    out.sort((a, b) => a.t - b.t);
+    return out;
+  }
+
+  // Pair boundary nodes across a seam (piece A edge eA ↔ piece B edge eB) by arc-length, for
+  // the XPBD sewing springs. Direction follows the fold's convention: head-to-tail (default)
+  // pairs A(t) with B(1−t); head-to-head (opts.flip) pairs A(t) with B(t) — matching
+  // closureGap()/flipFromAnchors in pattern-fold.js. Unequal-length edges pair fine (the
+  // shorter side's nodes get reused → the longer side gathers). Returns [[nodeA, nodeB]…]
+  // node-index pairs (deduped). Notch-bounded sub-spans (anchors) are a later upgrade —
+  // today's seam `anchors` only encode direction (flip), not notch positions.
+  function seamPairs(meshA, eA, meshB, eB, opts) {
+    opts = opts || {};
+    const A = edgeNodes(meshA, eA), B = edgeNodes(meshB, eB);
+    if (!A.length || !B.length) return [];
+    const flip = !!opts.flip;
+    const fracB = (t) => (flip ? t : 1 - t);                    // B's node t → matching fraction
+    const nearest = (list, target, key) => {
+      let best = list[0], bd = Infinity;
+      for (const it of list) { const d = Math.abs(key(it) - target); if (d < bd) { bd = d; best = it; } }
+      return best;
+    };
+    const N = Math.max(A.length, B.length);
+    const pairs = [], seen = {};
+    for (let k = 0; k < N; k++) {
+      const f = N === 1 ? 0 : k / (N - 1);
+      const a = nearest(A, f, (it) => it.t);
+      const b = nearest(B, f, (it) => fracB(it.t));
+      const key = a.node + "_" + b.node;
+      if (seen[key]) continue;
+      seen[key] = true;
+      pairs.push([a.node, b.node]);
+    }
+    return pairs;
+  }
+
   const round3 = (v) => Math.round(v * 1000) / 1000;
 
-  window.PatternMesh = { triangulatePiece, pointInPoly, resampleBoundary, interiorGrid };
+  window.PatternMesh = { triangulatePiece, pointInPoly, resampleBoundary, interiorGrid, edgeNodes, seamPairs };
 })();
