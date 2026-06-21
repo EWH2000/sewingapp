@@ -41,11 +41,14 @@
   const state = {
     id: null, name: "", kind: "freeform",
     pieces: [], active: 0,                 // each {id,name,count,seamMm,cornerRadius,closed,nodes,notches,placements,layout}
-    snapOn: true, notchMode: false, unit: "in", gridMm: 5,
+    snapOn: true, notchMode: false, sewMode: false, unit: "in", gridMm: 5,
+    seams: [],                            // schema-3 seam graph: {id, a:{piece,edge}, b:{piece,edge}, foldAngle, anchors}
+    sewPending: null,                     // {piece:<id>, edge} — the first edge tapped, awaiting its pair
     cam: { k: 1, tx: 0, ty: 0 },
-    selection: { type: "none", index: -1 },   // vertex | edge | placement | none
+    selection: { type: "none", index: -1 },   // vertex | edge | placement | seam | none
     history: [], hindex: -1,
   };
+  const SEW = "#6b57c9";   // seam connectors / sew-mode affordances (a calm violet, distinct on paper)
   const ZERO = { x: 0, y: 0 };
   const activePiece = () => state.pieces[state.active] || null;
   const layoutOf = (p) => (p && p.layout) ? p.layout : ZERO;
@@ -200,7 +203,7 @@
     if (rafPending) return; rafPending = true;
     requestAnimationFrame(() => { rafPending = false; render(); });
   }
-  function render() { applyCamera(); drawGrid(); computeOverlaps(); drawPaths(); drawOverlay(); renderPieceList(); updateNumericPanel(); updateButtons(); }
+  function render() { applyCamera(); drawGrid(); computeOverlaps(); drawPaths(); drawOverlay(); renderPieceList(); renderSeamList(); updateNumericPanel(); updateButtons(); }
   function applyCamera() { geoG.setAttribute("transform", G.cameraMatrix(state.cam)); }
 
   function drawGrid() {
@@ -292,15 +295,46 @@
         const sel = state.selection.type === "placement" && state.selection.index === i;
         eSvg += labelTag(c.sx, c.sy + 4, pl.label || "Pocket", sel ? SEL : SEAMC);
       });
-      for (let i = 0; i < n; i++) {
-        const s = W2S(aB(ns[i]));
-        const isSel = state.selection.type === "vertex" && state.selection.index === i;
-        if (isSel) hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="11" fill="none" stroke="${SEL}" stroke-width="2"/>`;
-        hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="6.5" fill="${ACCENT}" stroke="#fff" stroke-width="1.6"/>`;
+      if (!state.sewMode) {   // corner handles are for editing; hide them while sewing
+        for (let i = 0; i < n; i++) {
+          const s = W2S(aB(ns[i]));
+          const isSel = state.selection.type === "vertex" && state.selection.index === i;
+          if (isSel) hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="11" fill="none" stroke="${SEL}" stroke-width="2"/>`;
+          hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="6.5" fill="${ACCENT}" stroke="#fff" stroke-width="1.6"/>`;
+        }
       }
     }
+    eSvg += seamOverlaySvg();
     edgesG.innerHTML = eSvg;
     handlesG.innerHTML = hSvg;
+  }
+  // Seam connectors (always shown) + sew-mode affordances (tappable edge-mid dots + the
+  // pending first edge). Screen-space, drawn over every piece on the board.
+  function seamOverlaySvg() {
+    let s = "";
+    if (state.sewMode) {
+      for (const pc of state.pieces) {
+        const L = layoutOf(pc), nn = pc.nodes.length;
+        for (let i = 0; i < nn; i++) {
+          const a = pc.nodes[i], b = pc.nodes[(i + 1) % nn];
+          const m = W2S({ x: (a.x + b.x) / 2 + L.x, y: (a.y + b.y) / 2 + L.y });
+          s += `<circle cx="${m.sx}" cy="${m.sy}" r="3.5" fill="${SEW}" opacity="0.45"/>`;
+        }
+      }
+    }
+    for (let i = 0; i < state.seams.length; i++) {
+      const sm = state.seams[i], ma = edgeMidScreen(sm.a), mb = edgeMidScreen(sm.b);
+      if (!ma || !mb) continue;
+      const sel = state.selection.type === "seam" && state.selection.index === i;
+      if (sel) for (const ref of [sm.a, sm.b]) { const e = edgeEndpointsScreen(ref); if (e) s += `<line x1="${e.a.sx}" y1="${e.a.sy}" x2="${e.b.sx}" y2="${e.b.sy}" stroke="${SEL}" stroke-width="3"/>`; }
+      s += `<line x1="${ma.sx}" y1="${ma.sy}" x2="${mb.sx}" y2="${mb.sy}" stroke="${sel ? SEL : SEW}" stroke-width="${sel ? 3 : 2}"${sel ? "" : ' stroke-dasharray="2 3"'} opacity="0.9"/>`;
+      for (const m of [ma, mb]) s += `<circle cx="${m.sx}" cy="${m.sy}" r="${sel ? 5 : 4}" fill="${sel ? SEL : SEW}"/>`;
+    }
+    if (state.sewMode && state.sewPending) {
+      const e = edgeEndpointsScreen(state.sewPending);
+      if (e) s += `<line x1="${e.a.sx}" y1="${e.a.sy}" x2="${e.b.sx}" y2="${e.b.sy}" stroke="${ACCENT}" stroke-width="4" opacity="0.9"/>`;
+    }
+    return s;
   }
 
   // ── pieces panel ─────────────────────────────────────────────────────────────
@@ -345,18 +379,22 @@
   }
   function addPiece() {
     const p = G.rectPiece("Piece " + (state.pieces.length + 1), 150, 200);
+    p.id = freshPieceId();
     placeToRight(p);
     state.pieces.push(p); state.active = state.pieces.length - 1; select("none", -1); commit(); fitPiece(state.active); render();
   }
   function duplicatePiece() {
     const ap = activePiece(); if (!ap) return;
-    const copy = JSON.parse(JSON.stringify(ap)); copy.name = ap.name + " copy"; delete copy.id;
-    placeToRight(copy);
+    const copy = JSON.parse(JSON.stringify(ap)); copy.name = ap.name + " copy"; copy.id = freshPieceId();
+    placeToRight(copy);   // a fresh id → the copy starts unsewn (seams stay on the original)
     state.pieces.splice(state.active + 1, 0, copy); state.active += 1; select("none", -1); commit(); fitPiece(state.active); render();
   }
   function deletePiece() {
     if (state.pieces.length <= 1) { setStatus("Keep at least one piece.", "warn"); clearStatus(3000); return; }
-    state.pieces.splice(state.active, 1); state.active = Math.max(0, state.active - 1); select("none", -1); commit(); fitPiece(state.active); render();
+    const removed = state.pieces[state.active];
+    state.pieces.splice(state.active, 1);
+    if (removed) state.seams = state.seams.filter((s) => s.a.piece !== removed.id && s.b.piece !== removed.id);
+    state.active = Math.max(0, state.active - 1); select("none", -1); commit(); fitPiece(state.active); render();
   }
   function selectPiece(i) {
     if (i < 0 || i >= state.pieces.length) return;
@@ -448,7 +486,11 @@
   function select(type, index) { state.selection = { type, index }; setReadoutForSelection(); }
   function clampSelection() {
     const s = state.selection, ap = activePiece();
-    const max = !ap ? 0 : s.type === "vertex" || s.type === "edge" ? ap.nodes.length : s.type === "placement" ? ap.placements.length : 0;
+    let max;
+    if (s.type === "seam") max = state.seams.length;
+    else if (s.type === "vertex" || s.type === "edge") max = ap ? ap.nodes.length : 0;
+    else if (s.type === "placement") max = ap ? ap.placements.length : 0;
+    else max = 0;
     if (s.type !== "none" && (s.index < 0 || s.index >= max)) state.selection = { type: "none", index: -1 };
   }
   function setReadout(t) { if (readoutEl) readoutEl.textContent = t || ""; }
@@ -460,11 +502,14 @@
       const i = s.index, n = ns.length; setReadout(`edge ${i + 1}: ${fmtLen(G.edgeLength(ns[i], ns[(i + 1) % n]))}`);
     } else if (s.type === "placement" && activePiece() && activePiece().placements[s.index]) {
       const pl = activePiece().placements[s.index]; setReadout(`${pl.label}: ${fmtVal(pl.w)} × ${fmtVal(pl.h)} ${unitShort()}`);
+    } else if (s.type === "seam" && state.seams[s.index]) {
+      const sm = state.seams[s.index], an = pieceById(sm.a.piece), bn = pieceById(sm.b.piece);
+      setReadout(`seam: ${an ? an.name : "?"} ↔ ${bn ? bn.name : "?"}`);
     } else setReadout("");
   }
 
   // ── history (undo/redo) ──────────────────────────────────────────────────────
-  const editSnapshot = () => JSON.stringify({ pieces: state.pieces, active: state.active, name: state.name });
+  const editSnapshot = () => JSON.stringify({ pieces: state.pieces, active: state.active, name: state.name, seams: state.seams });
   function resetHistory() { state.history = [editSnapshot()]; state.hindex = 0; }
   function commit() {
     state.history = state.history.slice(0, state.hindex + 1);
@@ -483,6 +528,8 @@
       layout: p.layout ? { x: p.layout.x, y: p.layout.y } : null,
     }));
     if (!state.pieces.length) state.pieces = [G.rectPiece("Piece 1", 300, 400)];
+    ensurePieceIds();
+    state.seams = G.normalizeSeams(o.seams || [], state.pieces);   // drop any refs the undo invalidated
     state.active = Math.min(o.active || 0, state.pieces.length - 1);
     state.name = o.name || ""; if (nameInput) nameInput.value = state.name;
     clampSelection();
@@ -583,12 +630,14 @@
     const pr = G.projectPointOnSegment({ x: p.sx, y: p.sy }, { x: as.sx, y: as.sy }, { x: bs.sx, y: bs.sy });
     const w = boardToLocal(snapWorld(S2W(pr.x, pr.y)));
     activePiece().nodes = G.insertVertexOnEdge(ns, ei, { x: G.round2(w.x), y: G.round2(w.y) });
+    reindexSeamsForInsert(activePiece().id, ei);
     commit(); select("vertex", ei + 1);
   }
   function deleteSelected() {
     if (!canEdit()) return;
     if (state.selection.type !== "vertex") { setStatus("Select a corner first, then Delete.", "warn"); clearStatus(3000); return; }
     if (nodes().length <= 3) { setStatus("A shape needs at least 3 corners.", "warn"); clearStatus(3000); return; }
+    reindexSeamsForDelete(activePiece().id, state.selection.index);
     nodes().splice(state.selection.index, 1);
     commit(); select("none", -1); scheduleRender();
   }
@@ -599,6 +648,125 @@
     const ei = hitEdge(p);
     if (ei >= 0) { insertOnEdge(ei, p); return; }
     select("none", -1);
+  }
+
+  // ── seams (Sew mode) ─────────────────────────────────────────────────────────
+  const pieceIndexById = (id) => state.pieces.findIndex((p) => p.id === id);
+  const pieceById = (id) => state.pieces.find((p) => p.id === id) || null;
+  function freshId(prefix, taken) { let c = 1, id; do { id = prefix + (c++); } while (taken.has(id)); return id; }
+  function ensurePieceIds() {
+    const used = new Set(state.pieces.map((p) => p.id).filter(Boolean));
+    for (const p of state.pieces) if (!p.id) { p.id = freshId("p", used); used.add(p.id); }
+  }
+  function freshPieceId() { return freshId("p", new Set(state.pieces.map((p) => p.id).filter(Boolean))); }
+  // Keep seam edge-refs valid when a piece's node count changes (insert/delete a corner):
+  // inserting after edge ei pushes higher edges up; deleting node k drops edge k and pulls
+  // higher edges down. Seams attached to the deleted edge are removed.
+  function reindexSeamsForInsert(pieceId, ei) {
+    for (const s of state.seams) for (const ref of [s.a, s.b]) if (ref.piece === pieceId && ref.edge > ei) ref.edge += 1;
+  }
+  function reindexSeamsForDelete(pieceId, k) {
+    state.seams = state.seams.filter((s) => !((s.a.piece === pieceId && s.a.edge === k) || (s.b.piece === pieceId && s.b.edge === k)));
+    for (const s of state.seams) for (const ref of [s.a, s.b]) if (ref.piece === pieceId && ref.edge > k) ref.edge -= 1;
+  }
+
+  function edgeEndpointsScreen(ref) {
+    const p = pieceById(ref.piece); if (!p) return null;
+    const L = layoutOf(p), n = p.nodes.length, a = p.nodes[ref.edge], b = p.nodes[(ref.edge + 1) % n];
+    if (!a || !b) return null;
+    return { a: W2S({ x: a.x + L.x, y: a.y + L.y }), b: W2S({ x: b.x + L.x, y: b.y + L.y }) };
+  }
+  function edgeMidScreen(ref) { const e = edgeEndpointsScreen(ref); return e ? { sx: (e.a.sx + e.b.sx) / 2, sy: (e.a.sy + e.b.sy) / 2 } : null; }
+
+  // Nearest authored node-edge across ALL pieces (sew is cross-piece). Returns {piece:<id>, edge}.
+  function hitEdgeAny(p) {
+    let best = null, bestD = HIT_EDGE;
+    for (const pc of state.pieces) {
+      const L = layoutOf(pc), n = pc.nodes.length;
+      for (let i = 0; i < n; i++) {
+        const a = W2S({ x: pc.nodes[i].x + L.x, y: pc.nodes[i].y + L.y });
+        const b = W2S({ x: pc.nodes[(i + 1) % n].x + L.x, y: pc.nodes[(i + 1) % n].y + L.y });
+        const d = G.pointToSegmentDist({ x: p.sx, y: p.sy }, { x: a.sx, y: a.sy }, { x: b.sx, y: b.sy });
+        if (d <= bestD) { bestD = d; best = { piece: pc.id, edge: i }; }
+      }
+    }
+    return best;
+  }
+  function hitSeam(p) {
+    let best = -1, bestD = 16;
+    for (let i = 0; i < state.seams.length; i++) {
+      const ma = edgeMidScreen(state.seams[i].a), mb = edgeMidScreen(state.seams[i].b);
+      if (!ma || !mb) continue;
+      const d = G.pointToSegmentDist({ x: p.sx, y: p.sy }, { x: ma.sx, y: ma.sy }, { x: mb.sx, y: mb.sy });
+      if (d <= bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  function handleSewTap(p) {
+    const si = hitSeam(p);
+    if (si >= 0) { state.sewPending = null; selectSeam(si); return; }
+    const hit = hitEdgeAny(p);
+    if (!hit) { state.sewPending = null; select("none", -1); scheduleRender(); return; }
+    if (!state.sewPending) {
+      state.sewPending = hit;
+      setStatus("Now tap the matching edge on another piece.", "info");
+      scheduleRender(); return;
+    }
+    if (state.sewPending.piece === hit.piece && state.sewPending.edge === hit.edge) {
+      state.sewPending = null; setStatus("Seam cancelled.", "info"); clearStatus(1500); scheduleRender(); return;
+    }
+    addSeam(state.sewPending, hit); state.sewPending = null;
+  }
+  function addSeam(a, b) {
+    const id = freshId("s", new Set(state.seams.map((s) => s.id)));
+    state.seams.push({ id, a: { piece: a.piece, edge: a.edge }, b: { piece: b.piece, edge: b.edge }, foldAngle: null, anchors: null });
+    commit(); selectSeam(state.seams.length - 1);
+    setStatus("Seam added.", "good"); clearStatus(2000);
+  }
+  function selectSeam(i) { state.selection = { type: "seam", index: i }; setReadoutForSelection(); render(); }
+  function deleteSeam() {
+    if (state.selection.type !== "seam") return;
+    state.seams.splice(state.selection.index, 1); select("none", -1); commit(); render();
+  }
+  function setSeamAngle(v) {
+    if (state.selection.type !== "seam") return;
+    const s = state.seams[state.selection.index]; if (!s) return;
+    s.foldAngle = v === "null" ? null : parseFloat(v);
+    commit(); render();
+  }
+  function toggleSew() {
+    state.sewMode = !state.sewMode;
+    if (state.sewMode && state.notchMode) { state.notchMode = false; updateNotchChip(); }
+    state.sewPending = null;
+    updateSewChip();
+    if (state.sewMode) { setStatus("Sew mode: tap an edge on one piece, then a matching edge on another, to join them.", "info"); clearStatus(4500); }
+    render();
+  }
+  function updateSewChip() { const c = $("#ed-seam"); if (c) c.classList.toggle("on", state.sewMode); }
+  function renderSeamList() {
+    const list = $("#ed-seams");
+    if (list) {
+      if (!state.seams.length) {
+        list.innerHTML = `<div class="empty">No seams yet. Turn on <strong>Sew</strong>, then tap an edge on one piece and the matching edge on another.</div>`;
+      } else {
+        list.innerHTML = state.seams.map((s, i) => {
+          const an = pieceById(s.a.piece), bn = pieceById(s.b.piece);
+          const sel = state.selection.type === "seam" && state.selection.index === i;
+          return `<button class="piece-row${sel ? " on" : ""}" data-action="ed-select-seam" data-seam="${i}">`
+            + `<span class="piece-row__name">${escapeHtml(an ? an.name : "?")} ↔ ${escapeHtml(bn ? bn.name : "?")}</span>`
+            + `<span class="piece-row__meta">edges ${s.a.edge + 1} · ${s.b.edge + 1}${s.foldAngle != null ? " · " + s.foldAngle + "°" : ""}</span>`
+            + `</button>`;
+        }).join("");
+      }
+    }
+    const ed = $("#ed-seam-edit"); if (!ed) return;
+    const s = state.selection.type === "seam" ? state.seams[state.selection.index] : null;
+    if (!s) { ed.innerHTML = ""; return; }
+    const ang = s.foldAngle;
+    const ab = (v, label) => `<button class="btn small editor__toggle${(v === "null" ? ang == null : ang === parseFloat(v)) ? " on" : ""}" data-action="ed-seam-angle" data-angle="${v}">${label}</button>`;
+    ed.innerHTML = `<div class="small muted" style="margin-bottom:6px">Fold angle <span class="muted">(used by the 3D fold)</span></div>`
+      + `<div class="btnrow">${ab("0", "Flat")}${ab("90", "90°")}${ab("180", "Fold")}${ab("null", "Auto")}</div>`
+      + `<button class="btn small btn--ghost btn--block" data-action="ed-del-seam" style="margin-top:10px">Delete seam</button>`;
   }
 
   // ── pointer interaction ──────────────────────────────────────────────────────
@@ -614,6 +782,10 @@
     const p = localPoint(e); pointers.set(e.pointerId, p);
     if (pointers.size === 2) { startPinch(); return; }
     if (pointers.size > 2) return;
+    if (state.sewMode) {   // sewing: a tap picks edges/seams; a drag still pans
+      mode = "maybeSew"; panStart = { sx: p.sx, sy: p.sy, cam: Object.assign({}, state.cam) };
+      return;
+    }
     if (canEdit()) {
       const vi = hitVertex(p);
       if (vi >= 0) { mode = "drag"; dragIndex = vi; dragMoved = false; select("vertex", vi); scheduleRender(); return; }
@@ -663,7 +835,7 @@
       setReadout(`${pc.name}: ${fmtVal(pc.layout.x)}, ${fmtVal(pc.layout.y)} ${unitShort()}`);
       scheduleRender(); return;
     }
-    if (mode === "maybePan") {
+    if (mode === "maybePan" || mode === "maybeSew") {
       if (Math.hypot(p.sx - panStart.sx, p.sy - panStart.sy) > MOVE_TOL) mode = "pan";
     }
     if (mode === "pan") {
@@ -684,6 +856,7 @@
     if (mode === "drag") { if (dragMoved) commit(); else setReadoutForSelection(); dragIndex = -1; mode = "idle"; scheduleRender(); return; }
     if (mode === "dragPlace") { if (dragMoved) commit(); placeIndex = -1; mode = "idle"; scheduleRender(); return; }
     if (mode === "dragPiece") { if (dragMoved) { commit(); warnIfOverlap(); } mode = "idle"; scheduleRender(); return; }
+    if (mode === "maybeSew") { handleSewTap(p); mode = "idle"; scheduleRender(); return; }
     if (mode === "maybePiece") {
       if (pieceMove.switched) { fitPiece(pieceMove.idx); render(); }   // tapped another piece → select + zoom in
       else resolveActiveTap(p);                                         // tapped the active piece → edit
@@ -722,7 +895,7 @@
 
   // ── build / save / print ────────────────────────────────────────────────────
   function buildDoc() {
-    return G.freeformToDoc({ pieces: state.pieces, name: (nameInput.value || "Untitled").trim() || "Untitled", gridMm: state.gridMm });
+    return G.freeformToDoc({ pieces: state.pieces, seams: state.seams, name: (nameInput.value || "Untitled").trim() || "Untitled", gridMm: state.gridMm });
   }
   async function buildTiled(doc) {
     try { return await PDF.makeTiledPdf(doc); }
@@ -770,9 +943,11 @@
     try { const r = await fetch(api("/patterns/" + ident.id)); if (!r.ok) throw 0; p = await r.json(); }
     catch { setStatus("Couldn't load that pattern.", "bad"); state.pieces = G.defaultParams().pieces; return; }
     state.name = p.name || "";
+    state.seams = [];
     if (p.kind === "freeform") {
       const params = p.params || {};
       state.pieces = G.normalizePieces(params); state.gridMm = params.gridMm || 5; state.id = ident.id;
+      state.seams = G.normalizeSeams(params.seams || [], state.pieces);
     } else if (p.kind === "rectangle") {
       state.pieces = [G.rectPiece(p.name || "Piece", p.params.widthMm, p.params.heightMm)];
       state.name = (p.name || "Pattern") + " copy"; state.id = null;
@@ -797,6 +972,8 @@
 
     await loadDoc();
     if (state.pieces.some((p) => !p.layout)) G.packLayouts(state.pieces);   // give every piece a board position
+    ensurePieceIds();                                                         // stable ids before any seam can reference them
+    state.seams = G.normalizeSeams(state.seams, state.pieces);                // drop refs to pieces dropped on load
     state.active = Math.min(state.active, state.pieces.length - 1);
     geomCacheMap.clear();
     if (nameInput) {
@@ -832,6 +1009,10 @@
         case "ed-redo": redo(); break;
         case "ed-snap": state.snapOn = !state.snapOn; updateSnapChip(); break;
         case "ed-notch": toggleNotch(); break;
+        case "ed-seam": toggleSew(); break;
+        case "ed-select-seam": selectSeam(parseInt(btn.dataset.seam, 10)); break;
+        case "ed-del-seam": deleteSeam(); break;
+        case "ed-seam-angle": setSeamAngle(btn.dataset.angle); break;
         case "ed-delete": deleteSelected(); break;
         case "ed-add-place": addPlacement(); break;
         case "ed-del-place": deletePlacement(); break;
@@ -863,6 +1044,7 @@
 
     updateSnapChip();
     updateNotchChip();
+    updateSewChip();
   }
   function updateSnapChip() {
     const c = $("#ed-snap"); if (!c) return;
@@ -870,7 +1052,9 @@
     c.textContent = state.snapOn ? "Snap " + fmtVal(state.gridMm) + " " + unitShort() : "Snap off";
   }
   function toggleNotch() {
-    state.notchMode = !state.notchMode; updateNotchChip();
+    state.notchMode = !state.notchMode;
+    if (state.notchMode && state.sewMode) { state.sewMode = false; state.sewPending = null; updateSewChip(); render(); }
+    updateNotchChip();
     if (state.notchMode) { setStatus("Notch mode: tap an edge to add a notch, tap a notch to remove it.", "info"); clearStatus(3500); }
   }
   function updateNotchChip() { const c = $("#ed-notch"); if (c) c.classList.toggle("on", state.notchMode); }

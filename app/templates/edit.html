@@ -35,6 +35,7 @@
       <button class="btn" data-action="ed-redo" aria-label="Redo" title="Redo">↷</button>
       <button class="btn editor__toggle on" data-action="ed-snap" id="ed-snap">Snap 5 mm</button>
       <button class="btn editor__toggle" data-action="ed-notch" id="ed-notch" title="Notch mode: tap an edge to add a notch">Notch</button>
+      <button class="btn editor__toggle" data-action="ed-seam" id="ed-seam" title="Sew mode: tap an edge on one piece, then a matching edge on another, to join them">Sew</button>
       <button class="btn" data-action="ed-delete" title="Delete the selected corner">Delete point</button>
       <span class="editor__spacer"></span>
       <span class="editor__readout" id="ed-readout"></span>
@@ -69,6 +70,15 @@
 
     <div class="card" id="ed-numeric">
       <div class="empty">Tap a corner to move it, or an edge to set its length.</div>
+    </div>
+
+    <div class="card">
+      <div class="row row--between" style="margin-bottom:8px">
+        <strong>Seams</strong>
+        <span class="small muted">tap edge ↔ edge in Sew mode</span>
+      </div>
+      <div id="ed-seams" class="piece-list"></div>
+      <div id="ed-seam-edit" style="margin-top:10px"></div>
     </div>
 
     <div class="card edit-actions">

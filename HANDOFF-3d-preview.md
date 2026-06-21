@@ -131,8 +131,11 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
       tote previews as a proportioned, pattern-textured box; flat leather straps (arc-len =
       strap length); studio/atelier look + "finished measurements" spec plate; inches/cm
       units; `tools/preview/verify-box-mesh.mjs` (18 checks).*
-- [ ] **M2** — seam graph + **Sew mode** (schema-3 `seams[]`, edge identity, cross-piece
-      edge-pair selection UX on `/edit`, dart self-seam emission). *~3–5.*
+- [x] **M2** — seam graph + **Sew mode** (schema-3 `seams[]`, edge identity, cross-piece
+      edge-pair selection UX on `/edit`). *DONE 2026-06-21 — top-level `seams[]` (stable/unique
+      piece ids, `G.normalizeSeams`, `tools/tiling/verify-seams.mjs`); tap edge↔edge to author,
+      per-seam fold-angle, round-trips through save + undo/redo. **Deferred to M3+:** notch
+      `{edge,t,type}` upgrade + anchors UI, **dart authoring/self-seams**, seam flip.*
 - [ ] **M3** — Step 2 rigid fold-up (`pattern-fold.js`: spanning tree + Levenberg–
       Marquardt closure solve for the cyclic seams; three.js hinge renderer; graceful
       degradation). *~3–5.* **← M3 must be solid before M4/M5: the rigid fold is the warm

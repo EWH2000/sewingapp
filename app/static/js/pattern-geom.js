@@ -161,12 +161,44 @@
     };
   }
   // Accept the multi-piece shape, OR a legacy single-shape (schema 1 `nodes`),
-  // OR nothing — always return a non-empty pieces array.
+  // OR nothing — always return a non-empty pieces array. Piece ids are stable + UNIQUE
+  // (existing ids preserved; missing ones get the next free "pN") so a seam's EdgeRef can't
+  // silently retarget when pieces are added/removed/reordered.
   function normalizePieces(params) {
-    if (params.pieces && params.pieces.length) return params.pieces.map(clonePiece);
+    if (params.pieces && params.pieces.length) {
+      const used = new Set(params.pieces.map((p) => p.id).filter(Boolean));
+      let c = 1; const freshId = () => { let id; do { id = "p" + (c++); } while (used.has(id)); used.add(id); return id; };
+      return params.pieces.map((p, i) => clonePiece(p.id ? p : Object.assign({}, p, { id: freshId() }), i));
+    }
     if (params.nodes && params.nodes.length)
       return [clonePiece({ name: params.name || "Piece 1", count: 1, seamMm: params.seamMm || 0, closed: params.closed !== false, nodes: params.nodes }, 0)];
     return [clonePiece(rectPiece("Piece 1", 300, 400), 0)];
+  }
+  // Seam graph (schema 3): a top-level list of which authored node-edge of which piece is
+  // sewn to which. EdgeRef = { piece:<id>, edge:i } where edge i = the boundary edge leaving
+  // node i (segment node[i]->node[i+1], mod the closed loop) — stable across node moves,
+  // radius/seam changes, and the shelf-packer. Drop any seam whose ref points at a missing
+  // piece or an out-of-range edge (e.g. after a piece/edge was deleted).
+  function normalizeSeams(seams, pieces) {
+    if (!Array.isArray(seams)) return [];
+    const byId = {}; (pieces || []).forEach((p) => { byId[p.id] = p; });
+    const okRef = (r) => r && byId[r.piece] && Number.isInteger(r.edge) && r.edge >= 0 && r.edge < byId[r.piece].nodes.length;
+    const used = new Set(seams.map((s) => s && s.id).filter(Boolean));
+    let c = 1; const freshId = () => { let id; do { id = "s" + (c++); } while (used.has(id)); used.add(id); return id; };
+    const out = [];
+    for (const s of seams) {
+      if (!s || !okRef(s.a) || !okRef(s.b)) continue;
+      out.push({
+        id: s.id || freshId(),
+        a: { piece: s.a.piece, edge: s.a.edge },
+        b: { piece: s.b.piece, edge: s.b.edge },
+        // Step-2 dihedral (deg): 0 flat, +valley, −mountain; null = let the fold solver find it.
+        foldAngle: (s.foldAngle === 0 || s.foldAngle) ? s.foldAngle : null,
+        // Matched arc-length fractions (notch anchors); null = default head-to-tail in the fold.
+        anchors: Array.isArray(s.anchors) ? s.anchors.map((an) => ({ ta: +an.ta || 0, tb: +an.tb || 0 })) : null,
+      });
+    }
+    return out;
   }
   function pieceLabelLines(p, w, h) {
     const lines = [`${p.name}${p.count > 1 ? " — cut " + p.count : ""}`, `${Math.round(w)} × ${Math.round(h)} mm`];
@@ -356,8 +388,11 @@
       labels.push({ xMm: round2(pc.bb.minX + pc.bb.w / 2 + dx), yMm: round2(pc.bb.minY + pc.bb.h / 2 + dy), size: 10, lines: pieceLabelLines(pc.p, pc.bb.w, pc.bb.h) });
       pc.p.layout = { x: round2(pc.L.x + dx), y: round2(pc.L.y + dy) };
     }
+    const seams = normalizeSeams(params.seams || [], pieces);
     return {
-      name: params.name || "Untitled", kind: "freeform", schema: 2, pieces, paths, labels,
+      // schema 3 only when a seam graph is actually present (else stays schema 2, unchanged).
+      name: params.name || "Untitled", kind: "freeform", schema: seams.length ? 3 : 2,
+      pieces, seams, paths, labels,
       gridMm: params.gridMm || 5,
       widthMm: Math.max(1, Math.ceil(board.w)), heightMm: Math.max(1, Math.ceil(board.h)),
     };
@@ -396,7 +431,7 @@
     edgeLength, projectPointOnSegment, pointToSegmentDist,
     bbox,
     nodesToPoints, nodesToPaths, insertVertexOnEdge, polylineToNodes,
-    rectPiece, normalizePieces, piecesFromDoc, pieceGeom, nearestEdge, notchMark,
+    rectPiece, normalizePieces, normalizeSeams, piecesFromDoc, pieceGeom, nearestEdge, notchMark,
     packLayouts, normalizeDoc, freeformToDoc, exportBoard, defaultParams,
   };
 })();

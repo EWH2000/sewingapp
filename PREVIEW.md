@@ -877,9 +877,12 @@ focused sessions; estimates, not commitments — 3b especially.)
   proportioned, pattern-textured box; flat leather straps (arc length = strap length); a
   studio/atelier look + "finished measurements" spec plate; inches/cm units. (`preview3d.js`
   imports only `three` so the test runs in Node via `tools/preview/three-resolver.mjs`.)
-- [ ] **M2 — Seam graph + Sew mode (~3–5).** Schema-3 `seams[]`, edge-identity, Sew-mode
-  selection UX on `/edit`, seam list, dart self-seam emission. **Gate:** she can author
-  the worked-tote seam graph by tapping edges, and it round-trips through save.
+- [x] **M2 — Seam graph + Sew mode (~3–5). DONE 2026-06-21.** Schema-3 top-level `seams[]`
+  (`EdgeRef {piece:<id>, edge:i}`, stable/unique piece ids, `G.normalizeSeams`, edge-identity
+  stable under node-move/radius — `tools/tiling/verify-seams.mjs`), Sew-mode selection UX on
+  `/edit` (tap edge↔edge → seam; connector + seam list; per-seam fold-angle preset), round-trips
+  through save + undo/redo. Gate cleared on her iPad. **Deferred to M3+:** notch `{edge,t,type}`
+  upgrade + anchors UI, dart authoring/self-seams, seam flip (the fold makes direction visible).
 - [ ] **M3 — Step 2 rigid fold-up (~3–5).** `pattern-fold.js` (spanning tree + LM
   closure), the three.js hinge renderer, degradation ladder; `verify-fold.mjs`.
   **Gate:** the tote folds up and closes; a non-box bag with `null` angles solves;

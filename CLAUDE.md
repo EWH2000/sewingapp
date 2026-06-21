@@ -117,7 +117,7 @@ auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-
 radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
 the only part not auto-tested — verify by drawing.
 
-**3D assembled preview — M0 + M1 DONE; iPad gates cleared (2026-06-21); M2 next.** Full build spec in
+**3D assembled preview — M0–M2 DONE; iPad gates cleared (2026-06-21); M3 next.** Full build spec in
 `PREVIEW.md`: an in-browser three.js preview of the *sewn-up* product, on the road to a
 soft-body **garment cloth-drape** (the real goal — she's making skirts + tank-style
 dresses; sleeveless-first by design, sleeves are an additive M6 escape hatch, nothing
@@ -137,6 +137,12 @@ as a correctly-proportioned, pattern-textured box (per-face `CanvasTexture` from
 `pieceGeom`) with flat leather straps + a studio **atelier** look (DESIGN.md "Visual
 identity"). Also this session: **app-wide display units default to inches + cm (mm dropped)**,
 persisted in `localStorage["sewing.unit"]`, shared by home/editor/preview — the document
-stays in mm, so the print spine + calibration gate are untouched. **Next: M2** (seam graph +
-Sew mode). **Build-tracking + starting orders: `HANDOFF-3d-preview.md`** (locked decisions,
-milestone ladder, files to create, don't-break checklist).
+stays in mm, so the print spine + calibration gate are untouched. **M2 DONE:** a top-level
+**`seams[]`** graph (schema 2→3, additive; `EdgeRef {piece:<id>, edge:i}` with stable/unique
+piece ids; `G.normalizeSeams` drops dangling refs; headless-tested in `tools/tiling/verify-
+seams.mjs`) authored via a new **Sew mode** in `/edit` (tap an edge on one piece, then a
+matching edge on another → a seam; per-seam fold-angle preset; round-trips through save +
+undo/redo). **Deferred to M3+:** notch `{edge,t,type}` upgrade + anchors UI, dart authoring/
+self-seams, seam flip — and the preview doesn't *consume* seams yet. **Next: M3** (rigid
+fold-up: `pattern-fold.js` spanning-tree + LM closure → the folded 3D bag). **Build-tracking +
+starting orders: `HANDOFF-3d-preview.md`** (locked decisions, milestone ladder, files, checklist).
