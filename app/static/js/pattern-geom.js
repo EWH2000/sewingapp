@@ -274,7 +274,9 @@
         name = lab.lines[0].split(" — ")[0].trim() || name;
         const m = /cut\s+(\d+)/i.exec(lab.lines[0]); if (m) count = parseInt(m[1], 10);
       }
-      return { name, count, seamMm: 0, closed: true, nodes: polylineToNodes(c.points) };
+      // Route through clonePiece so the piece is fully-formed (notches/placements/
+      // cornerRadius/layout defaults) — the editor assumes those fields exist.
+      return clonePiece({ name, count, seamMm: 0, closed: true, nodes: polylineToNodes(c.points) }, i);
     });
   }
 

@@ -2,10 +2,10 @@
 {% block title %}Sewing — Draw{% endblock %}
 {% block head_extra %}
   <script>window.SEWING_EDIT = {{ (pattern or {})|tojson }};</script>
-  <script src="{{ base_path }}/static/js/vendor/browser.maker.js" defer></script>
-  <script src="{{ base_path }}/static/js/vendor/maker-shim.js" defer></script>
-  <script src="{{ base_path }}/static/js/pattern-geom.js" defer></script>
-  <script src="{{ base_path }}/static/js/editor.js" defer></script>
+  <script src="{{ base_path }}/static/js/vendor/browser.maker.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/vendor/maker-shim.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-geom.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/editor.js?v={{ asset_ver }}" defer></script>
 {% endblock %}
 {% block wrap_class %}wrap--editor{% endblock %}
 {% block content %}

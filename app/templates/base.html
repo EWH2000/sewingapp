@@ -14,11 +14,11 @@
   <link rel="apple-touch-icon" href="{{ base_path }}/static/icons/icon-180.png">
   <link rel="icon" href="{{ base_path }}/static/icons/icon.svg" type="image/svg+xml">
 
-  <link rel="stylesheet" href="{{ base_path }}/static/css/styles.css">
+  <link rel="stylesheet" href="{{ base_path }}/static/css/styles.css?v={{ asset_ver }}">
   <script>window.SEWING_BASE = {{ base_path|tojson }};</script>
-  <script src="{{ base_path }}/static/js/vendor/pdf-lib.min.js" defer></script>
-  <script src="{{ base_path }}/static/js/pattern-pdf.js" defer></script>
-  <script src="{{ base_path }}/static/js/app.js" defer></script>
+  <script src="{{ base_path }}/static/js/vendor/pdf-lib.min.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-pdf.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/app.js?v={{ asset_ver }}" defer></script>
   {% block head_extra %}{% endblock %}
 </head>
 <body>

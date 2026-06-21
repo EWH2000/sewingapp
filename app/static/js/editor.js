@@ -26,7 +26,10 @@
   // editor palette (fixed — the canvas is "paper", light regardless of theme)
   const INK = "#1b1d21", GRID_MINOR = "#ece9e2", GRID_MAJOR = "#dcd7cd";
   const ACCENT = "#e0653a", SEL = "#1f9d6b", LABELC = "#6b7079", PAPER = "#fdfdfb";
-  const SEAMC = "#8a8f98", DIM = "#b7b3aa";
+  // DIM: the unselected pieces. Kept a clear medium slate (not the old pale
+  // #b7b3aa) so low-vision eyes can still read every outline; the active piece
+  // stays dominant via the orange fill + handles + full-ink stroke.
+  const SEAMC = "#8a8f98", DIM = "#5f6470", DIMFILL = "rgba(95,100,112,0.07)";
   const FILL = "rgba(224,101,58,0.06)";
   const HIT_VERTEX = 22, HIT_EDGE = 14, K_MIN = 0.05, K_MAX = 40, MOVE_TOL = 4;
 
@@ -212,11 +215,11 @@
       const p = state.pieces[pi], L = layoutOf(p), act = pi === state.active;
       const g = pieceGeomCached(p);
       const off = (pts) => pts.map((pt) => [pt[0] + L.x, pt[1] + L.y]);
-      const op = act ? 1 : 0.45;
+      const op = act ? 1 : 0.85;
       if (g.seam && g.seam.length)
         s += `<path d="${polyD(off(g.seam))}" fill="none" stroke="${SEAMC}" stroke-width="1" stroke-dasharray="5 3" opacity="${op}" vector-effect="non-scaling-stroke"/>`;
       if (g.cut && g.cut.length)
-        s += `<path d="${polyD(off(g.cut))}" fill="${act ? FILL : "none"}" stroke="${act ? INK : DIM}" stroke-width="${act ? 2 : 1.3}" opacity="${op}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        s += `<path d="${polyD(off(g.cut))}" fill="${act ? FILL : DIMFILL}" stroke="${act ? INK : DIM}" stroke-width="${act ? 2 : 1.7}" opacity="${op}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       p.placements.forEach((pl, idx) => {
         const sel = act && state.selection.type === "placement" && state.selection.index === idx;
         const pts = `${pl.x + L.x},${pl.y + L.y} ${pl.x + pl.w + L.x},${pl.y + L.y} ${pl.x + pl.w + L.x},${pl.y + pl.h + L.y} ${pl.x + L.x},${pl.y + pl.h + L.y}`;

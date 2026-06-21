@@ -38,7 +38,32 @@ BASE_PATH = os.environ.get("BASE_PATH", "").rstrip("/")
 # in settings (editable from her phone); this env is just the seed default.
 ENV_PRINTER_URI = os.environ.get("SEWING_PRINTER_URI", "")
 APP_DIR = os.path.dirname(__file__)
+STATIC_DIR = os.path.join(APP_DIR, "static")
 MAX_PDF_BYTES = 12 * 1024 * 1024
+
+
+def _compute_asset_ver() -> str:
+    """A short content hash over the CSS/JS assets, appended as ``?v=`` to every
+    asset URL in the templates. StaticFiles sends only ETag/Last-Modified (no
+    Cache-Control), so iOS Safari's heuristic cache will happily serve a stale
+    JS file for hours without revalidating — which silently pins old, broken
+    code on her iPad after a deploy. A content-derived URL changes whenever a
+    file's bytes change, so the browser is forced to fetch the new version."""
+    import hashlib
+    h = hashlib.sha1()
+    for root, _dirs, files in os.walk(STATIC_DIR):
+        for fn in sorted(files):
+            if fn.endswith((".js", ".css")):
+                h.update(fn.encode("utf-8"))
+                try:
+                    with open(os.path.join(root, fn), "rb") as f:
+                        h.update(f.read())
+                except OSError:
+                    pass
+    return h.hexdigest()[:10]
+
+
+ASSET_VER = _compute_asset_ver()
 
 
 @asynccontextmanager
@@ -53,9 +78,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Sewing", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=os.path.join(APP_DIR, "templates"))
-templates.env.globals.update(base_path=BASE_PATH)
+templates.env.globals.update(base_path=BASE_PATH, asset_ver=ASSET_VER)
 
 
 # ── printer/config helpers ────────────────────────────────────────────────────
