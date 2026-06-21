@@ -144,5 +144,6 @@ seams.mjs`) authored via a new **Sew mode** in `/edit` (tap an edge on one piece
 matching edge on another → a seam; per-seam fold-angle preset; round-trips through save +
 undo/redo). **Deferred to M3+:** notch `{edge,t,type}` upgrade + anchors UI, dart authoring/
 self-seams, seam flip — and the preview doesn't *consume* seams yet. **Next: M3** (rigid
-fold-up: `pattern-fold.js` spanning-tree + LM closure → the folded 3D bag). **Build-tracking +
-starting orders: `HANDOFF-3d-preview.md`** (locked decisions, milestone ladder, files, checklist).
+fold-up: `pattern-fold.js` spanning-tree + LM closure → the folded 3D bag) — **start the M3
+session with `HANDOFF-M3-fold.md`** (self-contained starting orders). General build-tracking +
+locked decisions live in `HANDOFF-3d-preview.md` + `PREVIEW.md`.
