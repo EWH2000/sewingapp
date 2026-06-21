@@ -909,6 +909,15 @@ focused sessions; estimates, not commitments — 3b especially.)
   cloth.js` (XPBD: distance/bend/seam/pressure), the §6.6 stability protocol,
   `preview3d` cache; mesh/correspondence tests. **Gate:** a sewn, inflated, orbitable,
   cached bag that doesn't explode on her real tote.
+  - [x] **Prep layer done (2026-06-21, headless only — no visible change yet).** Vendored
+    `poly2tri.js`; `pattern-mesh.js` triangulates a piece into a sim mesh (boundary resampled
+    to ~h with authored-edge+t tags, interior Steiner grid, CDT, distance+bend constraints —
+    `verify-mesh.mjs`, 15) and pairs seam nodes by arc-length honoring the fold's head-to-
+    tail/head-to-head direction (`seamPairs` — `verify-seam-correspondence.mjs`, 16).
+  - [ ] **Next: `pattern-cloth.js`** — the XPBD core consuming mesh + seamPairs + the rigid
+    fold as the warm start: §6.6 stitch-up (zero-gravity, eased seam stiffness, small substeps
+    + velocity clamp), weld, inflate (volume/pressure), settle; then the `preview3d` drape view
+    + `preview.html` detail slider + the `preview3d` settled cache. Ends in her hands-on gate.
 - [ ] **M5 — Step 3b garment on a form (~10–20).** `body-form.js` (loft + analytic
   ellipse collider) driven by `body` measurements; gravity drape, pinning + timed
   release, spatial-hash self-collision, fabric presets, curves/ease/darts in the drape.
