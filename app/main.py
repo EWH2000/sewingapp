@@ -100,6 +100,28 @@ async def settings_page(request: Request):
     })
 
 
+@app.get("/edit", response_class=HTMLResponse)
+async def edit_new(request: Request):
+    """Freeform editor — a blank new shape. The doc is built client-side."""
+    return templates.TemplateResponse(request, "edit.html", {
+        "active_tab": "draw", "pattern": None,
+    })
+
+
+@app.get("/edit/{pid}", response_class=HTMLResponse)
+async def edit_existing(request: Request, pid: int):
+    """Freeform editor over an existing pattern. Only id/name/kind are injected;
+    the editor fetches the document itself via the existing GET /patterns/{id}."""
+    with Session(engine) as s:
+        row = s.get(Pattern, pid)
+        if not row:
+            raise HTTPException(404, "Pattern not found.")
+        pattern = {"id": row.id, "name": row.name, "kind": row.kind}
+    return templates.TemplateResponse(request, "edit.html", {
+        "active_tab": "draw", "pattern": pattern,
+    })
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}

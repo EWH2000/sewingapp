@@ -80,8 +80,31 @@ Validate-Job preflight, failure/UX) is in **`PRINTING.md`**. Working references:
 5. **Templates + editor** — boxy-tote parametric template ✅ **DONE 2026-06-20**
    (`boxyTotePattern` in `app/static/js/pattern-pdf.js`: front/back, sides, base,
    straps — each with seam allowance, stitch line, grainline, label; shelf-packed
-   + tiled; headless-verified). **Next:** the freeform editor over the shared
-   document; more templates; SVG/DXF export.
+   + tiled; headless-verified).
+6. **Freeform editor, steps 1–2** ✅ **DONE 2026-06-20** — `/edit` SVG canvas (Draw
+   tab) edits one closed polygon (drag/add/delete points, grid snap, live edge
+   lengths, numeric entry, undo/redo, pinch/wheel zoom + pan); saves the whole doc
+   as `kind:"freeform"` in `params_json` and prints/downloads 1:1 via the unchanged
+   tiler. Pure geometry in `app/static/js/pattern-geom.js` (`window.PatternGeom`,
+   headless-tested by `tools/tiling/verify-editor-geom.mjs`); UI in `editor.js`.
+7. **Multi-piece freeform + step 3 (corners + seam allowance)** ✅ **DONE 2026-06-20** —
+   a freeform doc is a list of **pieces** (auto-packed into the tiled layout); open a
+   saved tote as editable pieces. **Maker.js** (vendored 0.10.3 browser bundle, loaded
+   only on `/edit`) does per-piece **rounded corners** (`chain.fillet`) and **seam
+   allowance** (`model.outline` inset), flattened to polylines (`chain.toKeyPoints`) so
+   the line-only tiler is untouched; `G.pieceGeom` falls back to straight cut lines when
+   Maker.js is absent.
+8. **Notches + pocket-placement guides** ✅ **DONE 2026-06-20** — per piece, notch ticks
+   (a point re-projected to the nearest edge; Notch mode to add/remove) and dashed
+   placement-guide rectangles with a label (e.g. where a pocket attaches: add / drag /
+   numeric size / label). Both reuse existing tiler line-kinds (`G.pieceExtras`), so the
+   tiler is untouched.
+9. **Whole-bag overview + click-to-edit (board layout)** ✅ **DONE 2026-06-20** — the canvas
+   shows every piece at once on a shared board (`piece.layout {x,y}`); tap a piece to select +
+   zoom in, "Show all" to zoom out, drag a piece to arrange, "Auto-arrange" to pack. WYSIWYG:
+   `freeformToDoc` places pieces by their `layout` (packs missing ones via `G.packLayouts`) and
+   normalizes the board — the arrangement is what prints. **Next:** SVG/DXF export
+   (`makerjs.exporter`); per-corner radius; overlap warning; true pocket↔panel linking.
 
 ## Reusable building blocks (licenses verified in the handoff)
 FreeSewing `@freesewing/core` (MIT) · Maker.js (Apache-2.0) · pdf-lib (MIT) ·

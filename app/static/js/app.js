@@ -142,6 +142,7 @@
 
     // rebuild a saved pattern document into a generatable pattern, by kind
     function patternFromSaved(p) {
+      if (p.kind === "freeform") return p.params;   // the stored doc is already tiler-ready
       if (p.kind === "box") return window.PatternPDF.boxyTotePattern(p.name, p.params);
       return window.PatternPDF.rectanglePattern(p.name, p.params.widthMm, p.params.heightMm);
     }
@@ -204,6 +205,7 @@
       const row = btn.closest("[data-pattern-id]");
       if (row) {
         const id = row.dataset.patternId;
+        if (action === "saved-edit") { location.href = api("/edit/" + id); return; }
         if (action === "saved-delete") {
           if (!(await confirmSheet("Delete this pattern?", "Delete"))) return;
           let r; try { r = await fetch(api("/patterns/" + id), { method: "DELETE" }); } catch { r = null; }

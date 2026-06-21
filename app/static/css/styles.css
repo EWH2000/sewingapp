@@ -70,6 +70,7 @@ em { font-style:normal; font-weight:700; }
   padding-bottom:env(safe-area-inset-bottom);
 }
 .tabbar--2 { grid-template-columns:repeat(2,1fr); }
+.tabbar--3 { grid-template-columns:repeat(3,1fr); }
 .tabbar a {
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:3px; padding:10px 4px; min-height:60px;
@@ -144,3 +145,67 @@ input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow
   box-shadow:var(--shadow); padding:18px; width:100%; max-width:460px;
 }
 .sheet__msg { margin:0 0 14px; font-weight:600; }
+
+/* ── freeform editor ─────────────────────────────────────────────────────── */
+/* Widescreen: break out of the 720px reading column to use the full width. */
+.wrap--editor { max-width:1600px; }
+.edit-header { margin-bottom:12px; }
+.edit-header h1 { margin-bottom:.1em; }
+.edit-header p { margin:0; }
+
+.edit-layout { display:grid; grid-template-columns:1fr; gap:12px; }
+.edit-rail { display:flex; flex-direction:column; gap:12px; min-width:0; }
+.edit-rail .card { margin-bottom:0; }
+.edit-actions { display:flex; flex-direction:column; }
+
+.editor { padding:0; overflow:hidden; display:flex; flex-direction:column; margin-bottom:0; }
+/* The canvas fills its "stage"; the stage is sized by the layout (full height on
+   widescreen, a tall fixed band when stacked on phones/portrait). */
+.editor__stage { position:relative; height:min(58vh, 560px); }
+/* Fixed light "paper" background regardless of theme — the canvas shows what
+   will print (dark ink on light paper), so it stays light in dark mode too. */
+.editor__canvas {
+  position:absolute; inset:0; display:block; width:100%; height:100%;
+  background:#fdfdfb; touch-action:none; user-select:none; -webkit-user-select:none;
+  -webkit-touch-callout:none; cursor:crosshair;
+}
+.editor__toolbar {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  padding:10px 12px; border-top:1px solid var(--border); background:var(--surface-2);
+}
+.editor__toolbar .btn { min-height:40px; padding:8px 12px; }
+.editor__spacer { flex:1 1 auto; }
+.editor__toggle.on { background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 34%, transparent); }
+.editor__readout {
+  font-variant-numeric:tabular-nums; font-weight:600; font-size:.85rem; color:var(--muted);
+  white-space:nowrap;
+}
+#ed-numeric .grid2 { margin-top:4px; }
+#ed-numeric .empty { padding:14px 12px; }
+.editor__hint { margin:.6rem 0 0; }
+
+/* pieces list (the rail's bag-builder) */
+.piece-list { display:flex; flex-direction:column; gap:6px; }
+.piece-row {
+  display:flex; flex-direction:column; align-items:flex-start; gap:1px;
+  width:100%; text-align:left; padding:9px 12px; min-height:auto;
+  border:1px solid var(--border); border-radius:10px; background:var(--surface);
+  color:var(--ink); font:inherit; cursor:pointer;
+}
+.piece-row.on { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, transparent); }
+.piece-row__name { font-weight:700; font-size:.95rem; }
+.piece-row__meta { font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+/* Two-column workspace once there's room (iPad landscape + laptops/desktops):
+   a big canvas beside a fixed control rail, the whole thing fitting the viewport
+   so every parameter is visible without scrolling. */
+@media (min-width:860px) {
+  .edit-layout {
+    grid-template-columns:minmax(0,1fr) 340px;
+    align-items:stretch;
+    height:calc(100vh - 210px);
+  }
+  .edit-canvas { height:100%; }
+  .editor__stage { height:auto; flex:1 1 auto; min-height:0; }
+  .edit-rail { height:100%; overflow:auto; }
+}

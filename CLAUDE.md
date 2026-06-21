@@ -65,5 +65,53 @@ App shell DONE + verified end-to-end (pages, hub tile, proxied path, pattern CRU
 printer-test IPP parse, SSRF guard, print guards, a real print through `/print`).
 Print spine physically proven (single-page + tiled 2×2). Authoring surface:
 **boxy-tote template** (front/back/sides/base/straps with seam allowance, stitch
-lines, grainlines, labels — `boxyTotePattern`) + a simple rectangle. **Next: the
-freeform editor** over the shared pattern document, then more templates + SVG/DXF.
+lines, grainlines, labels — `boxyTotePattern`) + a simple rectangle.
+
+**Freeform editor steps 1–2 DONE (2026-06-20).** A `/edit` SVG canvas (Draw tab)
+edits ONE closed polygon — drag/add/delete points, grid snap, live edge lengths,
+numeric entry, undo/redo, pinch/wheel zoom + pan — then saves (`kind:"freeform"`,
+whole doc in `params_json`) and prints/downloads 1:1 via the unchanged tiler.
+New: `app/static/js/pattern-geom.js` (pure, headless-tested geometry —
+`window.PatternGeom`), `app/static/js/editor.js` (UI), `app/templates/edit.html`,
+`tools/tiling/verify-editor-geom.mjs`. `patternFromSaved` got a `freeform` branch.
+The tiler/`printing.py`/calibration gate were NOT touched.
+
+**Multi-piece bag builder added (2026-06-20).** A freeform doc is now a list of
+**pieces** (front/back/side/base/strap/pocket…), each its own closed polygon, edited
+one at a time and **auto-packed** into the tiled layout by `freeformToDoc` (shelf-pack
+like the tote). The `/edit` rail has a Pieces panel (add / duplicate / rename / cut-count
+/ delete / select) and a **widescreen** canvas-+-rail layout. Opening a saved **tote**
+(`box`) imports it as editable pieces (`G.piecesFromDoc`). `params` schema bumped to 2
+(`pieces[]`); schema-1 single-shape docs still load (→ one piece).
+
+**Step 3 DONE (2026-06-20) — rounded corners + seam allowance (Maker.js).** Vendored
+`app/static/js/vendor/browser.maker.js` (the 0.10.3 browserify bundle — only prebuilt
+single-file build; newer npm has no browser bundle) + `maker-shim.js` (its global
+`require` → `window.makerjs`), loaded only on `/edit` before `pattern-geom.js`. Per piece:
+**Round corners** (uniform radius → `chain.fillet`) and **Seam allowance** (inset stitch
+line → `model.outline(...,inside)`), both flattened to polylines via `chain.toKeyPoints`
+(adaptive facet, chord err ≤0.35 mm) so the **line-only tiler stays untouched**. All in
+`G.pieceGeom(piece)` with a **fallback** to straight cut lines if `window.makerjs` is
+absent (Home never loads it — it prints stored flattened paths). Over-large SA is guarded
+(seam omitted, editor warns). Node tests use `makerjs@0.10.3` (in `tools/tiling`, matches
+the bundle).
+
+**Notches + pocket-placement guides DONE (2026-06-20).** Per piece: `notches:[{x,y}]`
+(a point that re-projects to the nearest edge → a ~7 mm perpendicular tick; **Notch** mode
+toggle: tap edge to add, tap tick to remove) and `placements:[{x,y,w,h,label}]` (a dashed
+guide rectangle, e.g. where a pocket attaches — "+ Pocket guide" button; tap to select,
+drag to move, numeric W/H/X/Y + label, Remove). Both reuse existing tiler line-kinds
+(notch→`cut`, placement→`seam`) so `pattern-pdf.js` stays untouched; emitted by
+`G.pieceExtras` inside `freeformToDoc`.
+
+**Whole-bag overview + click-to-edit DONE (2026-06-20).** The canvas now shows **every
+piece at once** on a shared **board** (each piece has `layout:{x,y}`); the selected piece
+is editable in place, the others are dimmed + named + tappable. **Tap a piece → select +
+zoom to it**; **Show all** zooms back out; **drag a piece** to arrange it (snaps to grid);
+**Auto-arrange** packs them. **WYSIWYG: the arrangement is what prints** — `freeformToDoc`
+places each piece at its `layout` (packs any missing) and normalizes the board; `G.packLayouts`
+is the shelf-packer. Editor world = board space (node board = local + `piece.layout`); a
+per-piece geom cache keeps pan/zoom off Maker.js. Backward-compatible: layout-less docs
+auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-corner
+radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
+the only part not auto-tested — verify by drawing.
