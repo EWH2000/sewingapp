@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Sewing{% endblock %}
+{% block content %}
+
+<h1>Sewing</h1>
+<p class="muted">Make a pattern, then print it at home at exact 1:1 scale or save it for later.</p>
+
+<!-- Printer + calibration status -->
+<div class="card">
+  <div class="row row--between">
+    <strong>Printer</strong>
+    {% if printer_uri %}
+      {% if calibrated %}<span class="chip chip--accent">calibrated ✓</span>
+      {% else %}<span class="chip" style="color:var(--warn)">test page needed</span>{% endif %}
+    {% else %}<span class="chip" style="color:var(--warn)">not set up</span>{% endif %}
+  </div>
+  {% if printer_uri %}
+    <p class="small muted" style="margin:.4rem 0 .8rem">{{ printer_uri }}</p>
+    <div class="btnrow">
+      <button class="btn" data-action="test-page">Print test page</button>
+      {% if not calibrated %}<button class="btn btn--ghost" data-action="mark-calibrated">It measured right</button>{% endif %}
+    </div>
+    {% if not calibrated %}
+    <p class="small muted" style="margin-top:.7rem">Print the test page, measure the 1-inch square / 6-inch ruler with a real ruler. If it's exact, tap <em>It measured right</em> — then patterns can print. Printing at 100% / Actual Size is automatic.</p>
+    {% endif %}
+  {% else %}
+    <p class="small muted" style="margin:.5rem 0">Add your printer to start printing.</p>
+    <a class="btn btn--primary" href="{{ base_path }}/settings">Set up the printer</a>
+  {% endif %}
+</div>
+
+<!-- New pattern -->
+<h2>New pattern</h2>
+
+<!-- Boxy tote template -->
+<form class="card" id="tote-form" onsubmit="return false">
+  <strong>Boxy tote</strong>
+  <p class="small muted" style="margin:.3rem 0 .9rem">A flat-bottomed tote — front, back, two sides, a base, and two straps, each with seam allowance and a stitch line. Enter the <em>finished</em> bag size.</p>
+  <label class="fld"><span>Name</span><input type="text" id="tote-name" placeholder="e.g. Market tote"></label>
+  <div class="grid2">
+    <label class="fld"><span>Width</span><input type="number" id="tote-w" min="1" step="1" inputmode="decimal" placeholder="350"></label>
+    <label class="fld"><span>Height</span><input type="number" id="tote-h" min="1" step="1" inputmode="decimal" placeholder="400"></label>
+  </div>
+  <div class="grid2">
+    <label class="fld"><span>Depth</span><input type="number" id="tote-d" min="1" step="1" inputmode="decimal" placeholder="120"></label>
+    <label class="fld"><span>Seam allowance</span><input type="number" id="tote-sa" min="0" step="1" inputmode="decimal" value="10"></label>
+  </div>
+  <div class="grid2">
+    <label class="fld"><span>Strap length</span><input type="number" id="tote-sl" min="1" step="1" inputmode="decimal" placeholder="600"></label>
+    <label class="fld"><span>Strap width</span><input type="number" id="tote-sw" min="1" step="1" inputmode="decimal" placeholder="25"></label>
+  </div>
+  <label class="fld" style="margin-bottom:14px"><span>Units</span>
+    <select id="tote-unit"><option value="mm">millimetres</option><option value="in">inches</option></select>
+  </label>
+  <div class="btnrow">
+    <button class="btn btn--primary" data-action="tote-print">Print at home</button>
+    <button class="btn" data-action="tote-download">Download PDF</button>
+  </div>
+  <button class="btn btn--ghost btn--block" data-action="tote-save" style="margin-top:10px">Save for later</button>
+</form>
+
+<!-- Simple rectangle (secondary) -->
+<details class="card" style="padding:0">
+  <summary style="padding:16px;font-weight:700;cursor:pointer;list-style:none">Simple rectangle &nbsp;<span class="small muted">— a single sized panel</span></summary>
+  <form id="rect-form" onsubmit="return false" style="padding:0 16px 16px">
+    <label class="fld"><span>Name</span><input type="text" id="rect-name" placeholder="e.g. Side panel"></label>
+    <div class="grid2">
+      <label class="fld"><span>Width</span><input type="number" id="rect-w" min="1" step="0.1" inputmode="decimal" placeholder="300"></label>
+      <label class="fld"><span>Height</span><input type="number" id="rect-h" min="1" step="0.1" inputmode="decimal" placeholder="380"></label>
+    </div>
+    <label class="fld"><span>Units</span>
+      <select id="rect-unit"><option value="mm">millimetres</option><option value="in">inches</option></select>
+    </label>
+    <div class="btnrow">
+      <button class="btn btn--primary" data-action="rect-print">Print at home</button>
+      <button class="btn" data-action="rect-download">Download PDF</button>
+    </div>
+    <button class="btn btn--ghost btn--block" data-action="rect-save" style="margin-top:10px">Save for later</button>
+  </form>
+</details>
+
+<!-- Saved patterns -->
+<h2>Saved patterns</h2>
+{% if patterns %}
+  <div class="stack">
+  {% for p in patterns %}
+    <div class="card" data-pattern-id="{{ p.id }}">
+      <div class="row row--between">
+        <div>
+          <strong>{{ p.name }}</strong>
+          <div class="small muted">{{ p.kind }}</div>
+        </div>
+        <button class="btn btn--ghost small" data-action="saved-delete" aria-label="Delete">✕</button>
+      </div>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="btn btn--primary" data-action="saved-print">Print</button>
+        <button class="btn" data-action="saved-download">Download</button>
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">No saved patterns yet. Make one above and tap <em>Save for later</em>.</div>
+{% endif %}
+
+{% endblock %}

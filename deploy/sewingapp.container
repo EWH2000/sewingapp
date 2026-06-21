@@ -1,0 +1,45 @@
+# Quadlet unit for sewingapp — a rootless, systemd-managed container.
+#
+# Install (rootless / user service):
+#   cp deploy/sewingapp.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload
+#   systemctl --user start sewingapp.service
+#
+# systemd generates `sewingapp.service` from this file at daemon-reload.
+
+[Unit]
+Description=sewingapp — pattern authoring + 1:1 home printing
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=sewingapp
+Image=localhost/sewingapp:latest
+# host:container — serve on the LAN on port 8006.
+PublishPort=8006:8006
+# Served behind the hub's Caddy reverse proxy at https://command.home.arpa/sewing/
+# (same origin as the hub) so an installed full-screen web app stays full-screen.
+# Caddy strips the /sewing prefix; this tells the app to prepend it to emitted URLs.
+Environment=BASE_PATH=/sewing
+# Default printer (FALLBACK). The printer is a SEPARATE LAN host addressed by its
+# own IP — NOT host.containers.internal. No host CUPS is involved; the app POSTs
+# the PDF straight to the printer over IPP. The app prefers the value stored in
+# its SQLite settings (editable from her phone); this env is only the seed default.
+Environment=SEWING_PRINTER_URI=ipp://192.168.8.198:631/ipp/print
+# Named volume holds the live SQLite DB (pattern docs + settings); :U fixes
+# ownership for the non-root container user. Survives image rebuilds.
+Volume=sewingdata:/data:U
+# Liveness: hit /health with the stdlib (no curl in the slim image).
+HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health')"
+HealthInterval=30s
+HealthTimeout=3s
+HealthRetries=3
+HealthStartPeriod=5s
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+# Start automatically on boot (requires `loginctl enable-linger`).
+WantedBy=default.target

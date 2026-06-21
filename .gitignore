@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# SQLite — lives on the container's named volume, never in the repo
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Node deps for the tools/ reference scripts — reinstall with `npm install`
+# (package.json / package-lock.json ARE committed). The app's pdf-lib is the
+# single vendored file app/static/js/vendor/pdf-lib.min.js, which IS committed.
+node_modules/
+
+# Generated, reproducible artifacts from the tools/ generators
+tools/**/*.pdf
+tools/**/*.png
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~

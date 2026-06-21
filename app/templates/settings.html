@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sewing — Settings{% endblock %}
+{% block content %}
+
+<h1>Settings</h1>
+
+<h2>Printer</h2>
+<div class="card stack">
+  <label class="fld" style="margin:0">
+    <span>Printer address (IPP)</span>
+    <input type="text" id="printer-uri" value="{{ printer_uri }}" placeholder="ipp://192.168.8.198:631/ipp/print" autocomplete="off" spellcheck="false">
+  </label>
+  <p class="small muted" style="margin:0">The printer's own LAN address. Prints go straight to it — no drivers, no setup on the server. If the printer's IP ever changes, update it here.</p>
+  <div class="btnrow">
+    <button class="btn btn--primary" data-action="save-printer">Save</button>
+    <button class="btn" data-action="test-printer">Test connection</button>
+  </div>
+  <div class="card" id="printer-info" hidden style="margin:4px 0 0;background:var(--surface-2)"></div>
+</div>
+
+<h2>1:1 scale</h2>
+<div class="card">
+  <p class="small muted" style="margin-top:0">
+    {% if calibrated %}
+      This printer is <strong>calibrated</strong> — patterns print at exact size.
+    {% else %}
+      Before the first pattern, print the test page from Home and measure it. That confirms your printer prints true to size.
+    {% endif %}
+  </p>
+  <a class="btn" href="{{ base_path }}/">Go to the test page</a>
+</div>
+
+{% endblock %}

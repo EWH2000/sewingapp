@@ -1,0 +1,12 @@
+# Run the sewingapp backup once a day at 03:45.
+# Offset from pantry(03:00)/chores(03:15)/cer(03:30) so snapshots don't overlap.
+# Install to ~/.config/systemd/user/ and: systemctl --user enable --now sewingapp-backup.timer
+[Unit]
+Description=Daily sewingapp SQLite backup
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

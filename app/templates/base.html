@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}Sewing{% endblock %}</title>
+  <meta name="theme-color" content="#e0653a">
+  <meta name="color-scheme" content="light dark">
+
+  <link rel="manifest" href="{{ base_path }}/static/manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Sewing">
+  <link rel="apple-touch-icon" href="{{ base_path }}/static/icons/icon-180.png">
+  <link rel="icon" href="{{ base_path }}/static/icons/icon.svg" type="image/svg+xml">
+
+  <link rel="stylesheet" href="{{ base_path }}/static/css/styles.css">
+  <script>window.SEWING_BASE = {{ base_path|tojson }};</script>
+  <script src="{{ base_path }}/static/js/vendor/pdf-lib.min.js" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-pdf.js" defer></script>
+  <script src="{{ base_path }}/static/js/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ base_path }}/">
+      <span class="brand__mark">✂</span><span class="brand__rest">Sewing</span>
+    </a>
+    <!-- Root-relative so the link stays on the hub's origin (installed full-screen app). -->
+    <a class="home-pill" href="/" aria-label="Back to home dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9 21v-6h6v6"/>
+      </svg>
+      <span>Home</span>
+    </a>
+  </header>
+
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+  <div id="statusbar" class="statusbar" role="status" aria-live="polite" hidden></div>
+
+  <nav class="tabbar tabbar--2" aria-label="Primary">
+    {% set tab = active_tab|default('') %}
+    <a href="{{ base_path }}/" class="{{ 'on' if tab == 'home' }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/></svg>
+      <span>Home</span>
+    </a>
+    <a href="{{ base_path }}/settings" class="{{ 'on' if tab == 'settings' }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Settings</span>
+    </a>
+  </nav>
+</body>
+</html>

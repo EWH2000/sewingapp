@@ -1,0 +1,10 @@
+# Oneshot service that snapshots the sewingapp database.
+# Triggered by sewingapp-backup.timer. Install to ~/.config/systemd/user/.
+[Unit]
+Description=sewingapp SQLite backup
+Requires=sewingapp.service
+After=sewingapp.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sewingapp-backup.sh
