@@ -155,6 +155,32 @@
     return Math.hypot(b.x - a.x, b.y - a.y);
   };
 
+  // ── strap detection (pure — no G, no three) ─────────────────────────────────────
+  // A strap/handle is a long thin band sewn to the bag at its short ENDS. It is NOT
+  // rigid-foldable (it has to bow into a handle arch, which the rigid solver can't do),
+  // so the fold EXCLUDES strap pieces and the renderer draws each as an arched band.
+  // Decision order: explicit role wins; then a name match; then long-&-thin whose seams
+  // sit only on its short edges (a long thin PANEL sewn along a long side is part of the
+  // bag, not a strap).
+  const STRAP_RE = /strap|handle/i;
+  function isStrapPiece(piece, seams) {
+    if (!piece || !piece.nodes || piece.nodes.length < 3) return false;
+    if (piece.role === "strap") return true;
+    if (piece.role === "panel") return false;
+    if (STRAP_RE.test(piece.name || "")) return true;
+    const bb = bboxNodes(piece.nodes);
+    const major = Math.max(bb.w, bb.h), minor = Math.min(bb.w, bb.h);
+    if (minor <= EPS || major / minor < 4) return false;
+    const mine = (seams || []).filter((s) => s.a.piece === piece.id || s.b.piece === piece.id);
+    if (!mine.length) return true;                  // long & thin, unattached → a strap
+    const tol = Math.max(1.5, 0.25 * minor);
+    for (const s of mine) {                          // any seam on a LONG side → a panel
+      const ref = s.a.piece === piece.id ? s.a : s.b;
+      if (Math.abs(edgeLen2d(piece.nodes, ref.edge) - minor) > tol) return false;
+    }
+    return true;
+  }
+
   // Small dense linear solve A x = b (k×k, partial pivot) for the LM normal equations.
   function solveLinear(A, b) {
     const n = b.length;
@@ -201,6 +227,24 @@
     else pieces = (pieces || []).map((p, i) => Object.assign({ id: p.id || "p" + (i + 1) }, p));
     if (G && G.normalizeSeams) seams = G.normalizeSeams(seams || [], pieces);
     else seams = seams || [];
+
+    // Pull strap pieces (and every seam touching one) OUT of the rigid fold BEFORE
+    // classification: a both-ends-sewn band can't fold rigidly, and a length-mismatched
+    // strap seam would be counted non-hingeable and degrade the WHOLE bag to "tree". With
+    // them removed the bag closes exactly as if no strap existed; straps render separately
+    // as arched bands from the `straps` field (built from the FINAL seated transforms).
+    let strapPieces = [], strapSeams = [];
+    const strapSet = {};
+    {
+      const cand = pieces.filter((p) => isStrapPiece(p, seams));
+      if (cand.length && cand.length < pieces.length) {   // keep at least one bag piece
+        strapPieces = cand;
+        strapPieces.forEach((p) => { strapSet[p.id] = true; });
+        strapSeams = seams.filter((s) => strapSet[s.a.piece] || strapSet[s.b.piece]);
+        pieces = pieces.filter((p) => !strapSet[p.id]);
+        seams = seams.filter((s) => !strapSet[s.a.piece] && !strapSet[s.b.piece]);
+      }
+    }
 
     const byId = {};
     pieces.forEach((p) => { byId[p.id] = p; });
@@ -386,12 +430,77 @@
     const transforms = {};
     for (const p of pieces) if (WT[p.id]) transforms[p.id] = { pos: WT[p.id].pos, quat: WT[p.id].quat };
 
+    // Strap handle instances (excluded from the rigid fold above): one arched-band spec
+    // per handle, anchored at the world midpoints of the BAG edges each strap is sewn to.
+    function buildStraps() {
+      // bag center (mean of placed bag-piece world centroids) → mirror grab handles.
+      const center = [0, 0, 0]; let nc2 = 0;
+      for (const id in byId) {
+        const T = WT[id], p = byId[id];
+        if (!T || !p.nodes || p.nodes.length < 3) continue;
+        const c = applyT(T, centroid3(p.nodes));
+        center[0] += c[0]; center[1] += c[1]; center[2] += c[2]; nc2++;
+      }
+      if (nc2) { center[0] /= nc2; center[1] /= nc2; center[2] /= nc2; }
+      const lerp = (a, b, t) => add(a, scale(sub(b, a), t));
+      const rv = (v) => [round3(v[0]), round3(v[1]), round3(v[2])];
+      const out = [];
+      for (const sp of strapPieces) {
+        const bb = bboxNodes(sp.nodes);
+        const lenMm = Math.max(bb.w, bb.h), widthMm = Math.min(bb.w, bb.h);
+        if (!(lenMm > 0 && widthMm > 0)) continue;
+        const mine = strapSeams
+          .filter((s) => s.a.piece === sp.id || s.b.piece === sp.id)
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        const edges = [];
+        for (const s of mine) {
+          const ref = strapSet[s.a.piece] ? (strapSet[s.b.piece] ? null : s.b) : s.a;  // bag side
+          if (!ref) continue;
+          const bp = byId[ref.piece], T = WT[ref.piece];
+          if (!bp || !T) continue;
+          const n = bp.nodes.length;
+          const w0 = applyT(T, node3(bp.nodes, ref.edge));
+          const w1 = applyT(T, node3(bp.nodes, (ref.edge + 1) % n));
+          edges.push({ piece: ref.piece, edge: ref.edge, w0, w1, mid: scale(add(w0, w1), 0.5) });
+        }
+        if (!edges.length) continue;                       // 0 bag seams → no handle drawn
+        // widthDir = the world direction the strap's WIDTH runs at the seam = the bag edge
+        // direction. The renderer sweeps the band so its width lies ALONG this, so a span
+        // handle meets each edge correctly instead of twisted 90° (a grab handle ignores it
+        // and uses the planar-rainbow path, since there the edge runs along the chord).
+        let anchors, grab = false, widthDir;
+        if (edges.length === 1) {
+          anchors = [edges[0].mid];                          // one end sewn → free end arcs up
+          widthDir = normalize(sub(edges[0].w1, edges[0].w0));
+        } else if (edges[0].piece === edges[1].piece && edges[0].edge === edges[1].edge) {
+          grab = true;                                       // both ends on the SAME edge → spread
+          const e = edges[0], eLen = len(sub(e.w1, e.w0)) || 1;
+          const span = Math.min(0.5 * eLen, lenMm * 0.4), f = span / eLen / 2;
+          anchors = [lerp(e.w0, e.w1, 0.5 - f), lerp(e.w0, e.w1, 0.5 + f)];
+          widthDir = normalize(sub(e.w1, e.w0));
+        } else {
+          anchors = [edges[0].mid, edges[1].mid];            // span between two distinct edges
+          const d0 = normalize(sub(edges[0].w1, edges[0].w0));
+          const d1 = normalize(sub(edges[1].w1, edges[1].w0));
+          widthDir = normalize(add(d0, scale(d1, dot(d0, d1) >= 0 ? 1 : -1)));   // sign-aligned avg
+        }
+        out.push({ piece: sp.id, lenMm: round3(lenMm), widthMm: round3(widthMm), grab, anchors: anchors.map(rv), widthDir: rv(widthDir) });
+        if (grab && (sp.count || 1) >= 2) {                  // mirror a 2nd handle to the opposite face
+          const m = (p) => [2 * center[0] - p[0], p[1], 2 * center[2] - p[2]];
+          out.push({ piece: sp.id, lenMm: round3(lenMm), widthMm: round3(widthMm), grab, mirrored: true, anchors: anchors.map((a) => rv(m(a))), widthDir: [-widthDir[0], widthDir[1], -widthDir[2]] });
+        }
+      }
+      return out;
+    }
+
     return {
       mode,
       transforms,
       root: roots[0],
       cycles,
       closures: closureOut,
+      // additive: arched-handle specs for strap pieces (excluded from the rigid fold).
+      straps: strapPieces.length ? buildStraps() : [],
       // additive debug field (recovered angles/axes) — read by the headless test.
       hinges: order.map((id) => {
         const h = parentHinge[id];
@@ -559,5 +668,5 @@
   }
   const round3 = (v) => Math.round(v * 1000) / 1000;
 
-  window.PatternFold = { foldDoc };
+  window.PatternFold = { foldDoc, isStrapPiece };
 })();

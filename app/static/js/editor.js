@@ -362,6 +362,12 @@
       + `<label class="fld" style="margin:0"><span>Round corners (${unitShort()})</span><input type="number" id="ed-piece-radius" min="0" step="any" inputmode="decimal" value="${fmtVal(ap.cornerRadius || 0)}"></label>`
       + `<label class="fld" style="margin:0"><span>Seam allowance (${unitShort()})</span><input type="number" id="ed-piece-seam" min="0" step="any" inputmode="decimal" value="${fmtVal(ap.seamMm || 0)}"></label>`
       + `</div>`
+      + `<label class="fld" style="margin-top:8px;display:block"><span>Type <span class="muted">(3D preview)</span></span>`
+      + `<select id="ed-piece-role">`
+      + `<option value="auto"${!ap.role ? " selected" : ""}>Auto-detect</option>`
+      + `<option value="panel"${ap.role === "panel" ? " selected" : ""}>Panel (folds flat)</option>`
+      + `<option value="strap"${ap.role === "strap" ? " selected" : ""}>Strap / handle</option>`
+      + `</select></label>`
       + (seamFailed ? `<p class="small" style="color:var(--warn);margin:.2rem 0 0">Seam allowance is too large for this shape — reduce it or widen the piece.</p>` : "")
       + `<button class="btn small btn--block" data-action="ed-add-place" style="margin-top:8px">+ Pocket guide</button>`
       + `<div class="btnrow" style="margin-top:8px">`
@@ -376,6 +382,8 @@
     if (rad) rad.addEventListener("change", () => { const v = toMm(parseFloat(rad.value)); ap.cornerRadius = isFinite(v) && v > 0 ? G.round2(v) : 0; commit(); render(); });
     const sm = $("#ed-piece-seam");
     if (sm) sm.addEventListener("change", () => { const v = toMm(parseFloat(sm.value)); ap.seamMm = isFinite(v) && v > 0 ? G.round2(v) : 0; commit(); render(); });
+    const rl = $("#ed-piece-role");
+    if (rl) rl.addEventListener("change", () => { ap.role = rl.value === "strap" ? "strap" : rl.value === "panel" ? "panel" : null; commit(); render(); });
   }
   function addPiece() {
     const p = G.rectPiece("Piece " + (state.pieces.length + 1), 150, 200);
@@ -522,6 +530,7 @@
     state.pieces = (o.pieces || []).map((p, i) => ({
       id: p.id || ("p" + (i + 1)), name: p.name || ("Piece " + (i + 1)),
       count: Math.max(1, Math.round(p.count || 1)), seamMm: p.seamMm || 0, cornerRadius: p.cornerRadius || 0, closed: p.closed !== false,
+      role: (p.role === "strap" || p.role === "panel") ? p.role : null,
       nodes: (p.nodes || []).map((n) => ({ x: n.x, y: n.y, radius: n.radius || 0 })),
       notches: (p.notches || []).map((nt) => ({ x: nt.x, y: nt.y })),
       placements: (p.placements || []).map((pl) => ({ x: pl.x, y: pl.y, w: pl.w, h: pl.h, label: pl.label || "Pocket" })),

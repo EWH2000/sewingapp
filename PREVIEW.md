@@ -896,8 +896,14 @@ focused sessions; estimates, not commitments — 3b especially.)
   panel is a wall, which would lay the bag on its face); the worked tote's cycle count is **4**,
   not the "~2" §5.2 implies; and **§3.6(a)'s tote JSON has an edge-index slip** — it pairs front's
   250 mm vertical edge to a side's 120 mm top edge (non-hingeable); `verify-fold.mjs` uses the
-  geometrically-consistent vertical pairings. **Deferred to its own session: STRAP integration**
-  (her real patterns include a strap piece — fold it into the bag, replacing the box-only ribbon).
+  geometrically-consistent vertical pairings.
+  - [x] **STRAP integration DONE (2026-06-21).** Strap pieces are excluded from the rigid fold
+    (a detect → split-before-classify → render-separately pass, so a both-ends-sewn band can't
+    degrade the bag); `foldDoc` returns additive `straps[]` and `preview3d.addStraps` draws an
+    arched leather handle per strap. A **grab** handle (both ends on one edge) is a planar
+    rainbow; a **span** (ends on two edges) sweeps its width along the bag edges (`widthDir`) so
+    it isn't twisted; count×2 grab auto-mirrors. Additive per-piece `role` + editor Type toggle.
+    *Deferred: count×2 span → single handle; plain-leather bands (no pattern texture).*
 - [ ] **M4 — Step 3a inflated bag (~6–10).** `pattern-mesh.js` (poly2tri), `pattern-
   cloth.js` (XPBD: distance/bend/seam/pressure), the §6.6 stability protocol,
   `preview3d` cache; mesh/correspondence tests. **Gate:** a sewn, inflated, orbitable,

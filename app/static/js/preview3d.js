@@ -34,16 +34,42 @@ export function boxPanelsFromParams(params) {
   ];
 }
 
-// A flat ribbon (rectangular cross-section, lying in the curve's z-plane) following `curve`,
-// `widthMm` wide — a strap band. Broad faces point ±z; DoubleSide lights both.
-function strapRibbonGeometry(curve, widthMm, samples = 48) {
+// A flat ribbon (rectangular cross-section) `widthMm` wide following `curve`. `frame`
+// selects how the band's width is oriented at each sample:
+//   • omitted        → the band lies in the curve's z-plane (broad faces ±z) — the M1 box
+//                       path, kept byte-identical.
+//   • {normal}       → planar-rainbow: width = normal × tangent (a grab handle in its panel
+//                       plane).
+//   • {widthDir}     → swept: width runs along widthDir (projected ⊥ tangent) — so a span
+//                       handle's width lies ALONG the bag edges it's sewn to, not twisted.
+// DoubleSide lights both faces.
+function strapRibbonGeometry(curve, widthMm, samples = 48, frame = null) {
   const pts = curve.getSpacedPoints(samples);
   const n = pts.length, half = widthMm / 2, pos = [];
-  for (let i = 0; i < n; i++) {
-    const p = pts[i], a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
-    let tx = b.x - a.x, ty = b.y - a.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
-    const wx = ty, wy = -tx;     // in-plane normal = band width direction (z stays constant)
-    pos.push(p.x + wx * half, p.y + wy * half, p.z, p.x - wx * half, p.y - wy * half, p.z);
+  const normal = frame && frame.normal ? frame.normal.clone().normalize() : null;
+  const widthDir = frame && frame.widthDir && frame.widthDir.lengthSq() > 1e-9 ? frame.widthDir.clone().normalize() : null;
+  if (!normal && !widthDir) {
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let tx = b.x - a.x, ty = b.y - a.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const wx = ty, wy = -tx;   // in-plane normal = band width direction (z stays constant)
+      pos.push(p.x + wx * half, p.y + wy * half, p.z, p.x - wx * half, p.y - wy * half, p.z);
+    }
+  } else {
+    let prevW = null;
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      const T = new THREE.Vector3().subVectors(b, a);
+      if (T.lengthSq() < 1e-12) T.set(1, 0, 0);
+      T.normalize();
+      let W = widthDir
+        ? widthDir.clone().addScaledVector(T, -widthDir.dot(T))   // swept: width ∥ edge, ⊥ tangent
+        : new THREE.Vector3().crossVectors(normal, T);            // planar-rainbow
+      if (W.lengthSq() < 1e-12) W = prevW ? prevW.clone() : new THREE.Vector3(1, 0, 0);
+      W.normalize(); prevW = W;
+      pos.push(p.x + W.x * half, p.y + W.y * half, p.z + W.z * half,
+               p.x - W.x * half, p.y - W.y * half, p.z - W.z * half);
+    }
   }
   const idx = [];
   for (let i = 0; i < n - 1; i++) { const o = i * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
@@ -126,7 +152,7 @@ function buildFoldedGroup(group, params, opts) {
   let fold;
   try { fold = window.PatternFold.foldDoc(params.pieces, params.seams, { root: params.foldRoot || null }); }
   catch (e) { group.userData.foldError = String((e && e.message) || e); return group; }
-  group.userData.fold = { mode: fold.mode, closures: fold.closures, root: fold.root, cycles: fold.cycles, pieceCount: params.pieces.length };
+  group.userData.fold = { mode: fold.mode, closures: fold.closures, root: fold.root, cycles: fold.cycles, straps: fold.straps, pieceCount: params.pieces.length };
 
   const G = (typeof window !== 'undefined') && window.PatternGeom;
   const make = opts.makeTexture;
@@ -172,8 +198,56 @@ function buildFoldedGroup(group, params, opts) {
     group.add(m);
   }
   if (fold.mode !== 'closed') addGapSeams(group, params, fold);
+  addStraps(group, fold);
   group.updateMatrixWorld(true);
   return group;
+}
+
+// ── addStraps: arched leather handles for strap pieces (excluded from the rigid fold) ──
+// foldDoc returns `fold.straps`, a list of handle specs each with world anchor point(s),
+// the strap's length (arc length) and width. Build a Bézier arch P0→over→P1 whose arc
+// length ≈ the strap length, then a flat leather band along it — a shape cue, like the box
+// preview's ribbon handles, but anchored at the strap's real sewn-on points.
+function archCurve(P0, P1, lenMm) {
+  const mid = new THREE.Vector3().addVectors(P0, P1).multiplyScalar(0.5);
+  const up = new THREE.Vector3(0, 1, 0);
+  const make = (c) => new THREE.QuadraticBezierCurve3(P0, mid.clone().addScaledVector(up, c), P1);
+  // binary-search the apex height so the arc length ≈ lenMm; if the straight span already
+  // exceeds lenMm the bracket drives c→0 (a taut straight band, no NaN) — as the box does.
+  let lo = 0, hi = Math.max(lenMm * 2, 50);
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (make(m).getLength() < lenMm) lo = m; else hi = m; }
+  return make((lo + hi) / 2);
+}
+
+function addStraps(group, fold) {
+  const straps = (fold && fold.straps) || [];
+  if (!straps.length) return;
+  const up = new THREE.Vector3(0, 1, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: LEATHER, side: THREE.DoubleSide, roughness: 0.85, metalness: 0.05 });
+  for (const st of straps) {
+    const a = st.anchors || [];
+    if (!a.length || !(st.lenMm > 0) || !(st.widthMm > 0)) continue;
+    const P0 = new THREE.Vector3(a[0][0], a[0][1], a[0][2]);
+    const P1 = a.length >= 2
+      ? new THREE.Vector3(a[1][0], a[1][1], a[1][2])
+      : P0.clone().addScaledVector(up, st.lenMm * 0.7);   // one end sewn → free end arcs up
+    const curve = archCurve(P0, P1, st.lenMm);
+    // Orient the band: a grab handle (both ends on one edge, edge ∥ chord) is a planar
+    // rainbow in its panel plane; a span/free handle sweeps its width ALONG the bag edge
+    // direction (widthDir) so it meets the edges square instead of twisted.
+    let frame;
+    if (!st.grab && st.widthDir) {
+      frame = { widthDir: new THREE.Vector3(st.widthDir[0], st.widthDir[1], st.widthDir[2]) };
+    } else {
+      let N = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(P1, P0).normalize(), up);
+      if (N.lengthSq() < 1e-9) N.set(0, 0, 1);            // vertical chord → arbitrary band plane
+      frame = { normal: N.normalize() };
+    }
+    const band = new THREE.Mesh(strapRibbonGeometry(curve, st.widthMm, 48, frame), mat);
+    band.userData.kind = 'strap';
+    band.userData.pieceId = st.piece;
+    group.add(band);
+  }
 }
 
 // Dashed "this seam doesn't close" bridges for unclosed closure seams (mode open/tree).

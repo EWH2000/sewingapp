@@ -203,5 +203,76 @@ console.log("=== Fixture G: authored direction (anchors) honored on a closure se
   ok(Math.min(g1, g2) < 1 && Math.max(g1, g2) > 10, `forced closure direction honored (gaps ${g1.toFixed(1)}, ${g2.toFixed(1)})`);
 }
 
+console.log("=== Fixture H: tote with a strap (excluded from the fold, rendered as handles) ===");
+{
+  const { pieces, seams } = tote();
+  const strap = rect("p_strap", "Strap", 600, 25); strap.count = 2;   // long thin band, cut ×2
+  pieces.push(strap);
+  // both strap short ends (edges 1 & 3, length 25) sew to the front TOP edge (front edge 2)
+  seams.push(
+    { id: "s_strap_l", a: { piece: "p_strap", edge: 1 }, b: { piece: "p_front", edge: 2 }, foldAngle: null },
+    { id: "s_strap_r", a: { piece: "p_strap", edge: 3 }, b: { piece: "p_front", edge: 2 }, foldAngle: null },
+  );
+  const res = F.foldDoc(pieces, seams);
+  ok(res.mode === "closed", `bag still closes with strap excluded, got ${res.mode}`);
+  ok(res.cycles === 4, `cycles unchanged = 4, got ${res.cycles}`);
+  ok(res.nonHingeable === 0, `strap seams not counted non-hingeable, got ${res.nonHingeable}`);
+  ok(res.root === "p_base", `root unchanged = p_base, got ${res.root}`);
+  ok(Object.keys(res.transforms).length === 5, `5 BAG pieces placed (strap excluded), got ${Object.keys(res.transforms).length}`);
+  ok(!res.transforms.p_strap, "strap absent from rigid transforms");
+  ok(Array.isArray(res.straps) && res.straps.length === 2, `2 handle instances (grab + mirror), got ${res.straps && res.straps.length}`);
+  const st = res.straps[0], mir = res.straps[1];
+  ok(st && st.anchors.length === 2, `handle has 2 anchors, got ${st && st.anchors.length}`);
+  ok(st && st.lenMm > 0 && st.widthMm > 0, `strap dims reported (${st && st.lenMm}×${st && st.widthMm})`);
+  const A = st.anchors[0], B = st.anchors[1];
+  ok(len(sub(A, B)) > 1, `anchors spread, not degenerate (got ${len(sub(A, B)).toFixed(2)})`);
+  ok(A[1] > 200 && B[1] > 200, `anchors near the bag top (front height 250), got y=${A[1].toFixed(0)},${B[1].toFixed(0)}`);
+  ok(mir && mir.mirrored === true, "second instance flagged mirrored");
+  ok(mir && (len(sub(mir.anchors[0], A)) > 30 || len(sub(mir.anchors[1], B)) > 30), "mirror handle is offset from the original (opposite face)");
+}
+
+console.log("=== Fixture J: strap SPANS the two sides (width runs along the side edges) ===");
+{
+  const { pieces, seams } = tote();
+  const strap = rect("p_strap", "Strap", 600, 25); strap.count = 2;
+  pieces.push(strap);
+  // strap short ends sewn to the LEFT and RIGHT side top edges (side edge 2) — an over-the-top span
+  seams.push(
+    { id: "s_strap_l", a: { piece: "p_strap", edge: 3 }, b: { piece: "p_sideL", edge: 2 }, foldAngle: null },
+    { id: "s_strap_r", a: { piece: "p_strap", edge: 1 }, b: { piece: "p_sideR", edge: 2 }, foldAngle: null },
+  );
+  const res = F.foldDoc(pieces, seams);
+  ok(res.mode === "closed", `bag still closes, got ${res.mode}`);
+  ok(res.straps.length === 1, `span → one handle (no mirror), got ${res.straps.length}`);
+  const st = res.straps[0];
+  ok(st.grab === false, "span handle (not a grab handle)");
+  ok(Array.isArray(st.widthDir), "widthDir reported");
+  const wd = st.widthDir, A = st.anchors[0], B = st.anchors[1];
+  ok(Math.abs(wd[1]) < 0.2, `widthDir is horizontal (|y|≈0), got y=${wd[1].toFixed(2)}`);
+  // chord (span direction) should be ~perpendicular to the width (the strap meets the side edges square)
+  const chord = sub(B, A), cl = len(chord) || 1; const cdir = [chord[0]/cl, chord[1]/cl, chord[2]/cl];
+  const dotcw = Math.abs(cdir[0]*wd[0] + cdir[1]*wd[1] + cdir[2]*wd[2]);
+  ok(dotcw < 0.3, `width ⊥ span direction (|cos|≈0), got ${dotcw.toFixed(2)}`);
+  ok(A[1] > 200 && B[1] > 200, `anchors near the bag top, got y=${A[1].toFixed(0)},${B[1].toFixed(0)}`);
+}
+
+console.log("=== Fixture I: isStrapPiece predicate (role / name / shape) ===");
+{
+  const strap = rect("p_strap", "Strap", 600, 25);
+  const strapSeams = [
+    { id: "s1", a: { piece: "p_strap", edge: 1 }, b: { piece: "p_front", edge: 2 } },
+    { id: "s2", a: { piece: "p_strap", edge: 3 }, b: { piece: "p_front", edge: 2 } },
+  ];
+  ok(F.isStrapPiece(strap, strapSeams) === true, "long-thin band sewn at short ends → strap");
+  const front = rect("p_front", "Front", 300, 250);
+  ok(F.isStrapPiece(front, []) === false, "square-ish panel → not a strap");
+  ok(F.isStrapPiece({ ...front, role: "strap" }, []) === true, "role:strap forces strap");
+  ok(F.isStrapPiece({ ...strap, role: "panel" }, strapSeams) === false, "role:panel forces panel");
+  ok(F.isStrapPiece(rect("p_h", "Shoulder Handle", 200, 250), []) === true, "name match (handle) → strap");
+  const longPanel = rect("p_lp", "Gusset", 600, 60);   // long & thin but sewn on its LONG side
+  const longSeam = [{ id: "g1", a: { piece: "p_lp", edge: 0 }, b: { piece: "p_x", edge: 0 } }];   // edge 0 = 600 mm side
+  ok(F.isStrapPiece(longPanel, longSeam) === false, "long thin panel sewn on a LONG edge → not a strap");
+}
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

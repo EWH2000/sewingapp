@@ -144,7 +144,8 @@ function fillFoldSpec(pat, fold) {
   if (fold.mode === 'closed') line = maxGap < 0.5 ? 'Closes cleanly' : `Closes within ${maxGap.toFixed(1)} mm`;
   else if (fold.mode === 'open') line = `Open by ${maxGap.toFixed(1)} mm — needs easing`;
   else line = 'Partial fold (tree only)';
-  specGrid.innerHTML = row('Pieces', String(fold.pieceCount)) + row('Assembly', line);
+  specGrid.innerHTML = row('Pieces', String(fold.pieceCount)) + row('Assembly', line)
+    + (fold.straps && fold.straps.length ? row('Handles', String(fold.straps.length)) : '');
 }
 
 // The "Floor piece" override — auto-detect can pick wrong (a tall tote's largest panel is a

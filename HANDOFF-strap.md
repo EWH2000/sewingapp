@@ -148,3 +148,26 @@ self-seams, atelier re-skin, then **M4** Step-3a inflated bag). Then `git commit
 ---
 ## New asks for this session
 > _(owner: add anything to adjust before/while building this.)_
+
+---
+## DONE (2026-06-21) — gate cleared on her touchscreen laptop
+Strap pieces now render as **flexible arched leather handles** on the folded bag.
+- **`pattern-fold.js`**: pure `isStrapPiece` (role → name → long-&-thin-with-short-end-seams);
+  strap pieces + their seams pulled OUT of the rigid fold *before* classification (fixes the
+  whole-bag→`tree` degrade from a length-mismatched strap seam); additive
+  `straps:[{piece,lenMm,widthMm,anchors,widthDir,grab,mirrored}]` returned (bag fold unchanged).
+- **`preview3d.js`**: `addStraps` + `archCurve` (bisect apex so arc-len ≈ strap length);
+  `strapRibbonGeometry` gained an optional `frame` ({normal}|{widthDir}) — box ribbon path
+  byte-identical. **Grab** handle (both ends on one edge) = planar rainbow; **span** handle
+  (ends on two edges, e.g. side-to-side) sweeps width along the bag edges (`widthDir`) so it
+  isn't twisted at the seams; count×2 grab auto-mirrors to the opposite face.
+- **`pattern-geom.js`/`editor.js`**: additive per-piece `role` (clonePiece + undo `restore`) +
+  a Pieces-panel **Type: Auto / Panel / Strap** select. **`preview.js`**: a "Handles" readout row.
+- **Tests**: `tools/preview/verify-fold.mjs` (59) + `verify-fold-mesh.mjs` (15); box-mesh +
+  `tools/tiling/verify-*` untouched/green. A ready fixture lives at id 3 ("Strap Tote (preview
+  test)").
+
+**Decisions made:** auto-detect **+** explicit editor toggle; count×2 *grab* mirrors to both
+faces. **Still deferred:** count×2 *span* renders a single handle (not a parallel pair); bands are
+plain leather (no pattern texture); notch `{edge,t,type}` + anchors UI; dart self-seams; atelier
+re-skin. **Next: M4** (Step 3a inflated bag).

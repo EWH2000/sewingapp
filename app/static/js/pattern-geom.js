@@ -150,6 +150,9 @@
       seamMm: Math.max(0, p.seamMm || 0),
       cornerRadius: Math.max(0, p.cornerRadius || 0),
       closed: p.closed !== false,
+      // role: 3D-preview hint — "strap" renders as an arched handle, "panel" forces a
+      // folded face, null = auto-detect (name/shape). Additive; absent in schema ≤2 docs.
+      role: (p.role === "strap" || p.role === "panel") ? p.role : null,
       nodes: (p.nodes || []).map((n) => ({ x: n.x, y: n.y, radius: n.radius || 0 })),
       // notches: a point that snaps to the nearest edge (robust to vertex edits).
       notches: (p.notches || []).map((nt) => ({ x: nt.x, y: nt.y })),

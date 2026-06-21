@@ -117,7 +117,7 @@ auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-
 radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
 the only part not auto-tested — verify by drawing.
 
-**3D assembled preview — M0–M3 DONE; iPad gates cleared (2026-06-21); M4 next.** Full build spec in
+**3D assembled preview — M0–M3 + strap handles DONE; owner gate cleared on her touchscreen laptop (2026-06-21); M4 next.** Full build spec in
 `PREVIEW.md`: an in-browser three.js preview of the *sewn-up* product, on the road to a
 soft-body **garment cloth-drape** (the real goal — she's making skirts + tank-style
 dresses; sleeveless-first by design, sleeves are an additive M6 escape hatch, nothing
@@ -158,7 +158,21 @@ Sew-mode **flip-direction toggle** (`anchors`). Headless tests `tools/preview/ve
 (33) + `verify-fold-mesh.mjs` (9); print spine/calibration gate/M1 box untouched. **Refinements
 vs the handoff:** root = max hinge-degree (largest area picks a wall on a tall tote); tote cycle
 count = 4; PREVIEW.md §3.6(a)'s tote JSON has an edge-index slip (pairs a 250 mm edge to a 120 mm
-one — `verify-fold.mjs` uses the consistent verticals). **Next: STRAP integration** (her real
-patterns include a strap — fold it into the bag, replacing the box-only ribbon; its own session),
-then **M4** (Step 3a inflated bag). General build-tracking + locked decisions live in
-`HANDOFF-3d-preview.md` + `PREVIEW.md`; `HANDOFF-M3-fold.md` was the M3 starting orders.
+one — `verify-fold.mjs` uses the consistent verticals). **STRAP INTEGRATION DONE (2026-06-21):**
+a freeform bag's strap now renders as **flexible arched leather handles** on the folded bag, not a
+flat panel. `pattern-fold.js` gains a pure `isStrapPiece` (role → name → long-&-thin-with-short-end-
+seams) and pulls strap pieces + their seams OUT of the rigid fold *before* classification (a length-
+mismatched strap seam used to be `nonHingeable` and degrade the WHOLE bag to `tree`); the bag closes
+unchanged and `foldDoc` returns an additive `straps:[{piece,lenMm,widthMm,anchors,widthDir,grab,...}]`.
+`preview3d.js` `addStraps` arches a leather band (`archCurve` bisects apex height so arc-len ≈ strap
+length) per handle: a **grab** handle (both ends on one edge) is a planar rainbow in its panel plane;
+a **span** handle (ends on two edges, e.g. side-to-side over the top) **sweeps its width ALONG the
+bag edges** (`widthDir`) so it meets the seams square, not twisted; a count×2 grab handle auto-mirrors
+to the opposite face. Additive per-piece **`role`** (`clonePiece`+editor `restore`+a Pieces-panel
+**Type: Auto/Panel/Strap** select). `strapRibbonGeometry` gained an optional `frame` ({normal}|
+{widthDir}) — the box ribbon path stays byte-identical. Tests: `verify-fold.mjs` (59) +
+`verify-fold-mesh.mjs` (15); box-mesh/print spine/calibration gate untouched. **Still deferred:**
+count×2 *span* renders one handle (not a parallel pair); strap bands are plain leather (no pattern
+texture); notch `{edge,t,type}` + anchors UI; dart self-seams; atelier re-skin. **Next: M4** (Step 3a
+inflated bag). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md` + `PREVIEW.md`;
+`HANDOFF-strap.md` was the strap starting orders, `HANDOFF-M3-fold.md` the M3 ones.

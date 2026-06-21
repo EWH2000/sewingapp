@@ -150,6 +150,16 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
       to its own session: STRAP integration** (her patterns include the strap — fold it into the
       bag, not just the box-preview ribbon). Also still deferred: notch `{edge,t,type}` + anchors
       UI, dart self-seams, atelier re-skin.* **← the rigid fold is the warm start M4/M5 need.**
+  - [x] **STRAP integration DONE (2026-06-21, gate cleared on her touchscreen laptop).** Strap
+        pieces are pulled OUT of the rigid fold *before* classification (a length-mismatched strap
+        seam used to make the whole bag degrade to `tree`); `foldDoc` returns additive
+        `straps:[{piece,lenMm,widthMm,anchors,widthDir,grab}]`; `preview3d.addStraps` arches a
+        leather band per handle — a **grab** handle (both ends on one edge) is a planar rainbow,
+        a **span** (e.g. side-to-side over the top) **sweeps its width along the bag edges** so it
+        meets the seams square; count×2 grab auto-mirrors. Additive per-piece `role` + a Pieces-
+        panel **Type: Auto/Panel/Strap**. Tests `verify-fold.mjs` (59) + `verify-fold-mesh.mjs`
+        (15). *Deferred: count×2 span → one handle (not a parallel pair); plain-leather bands (no
+        pattern texture).*
 - [ ] **M4** — Step 3a inflated bag (`pattern-mesh.js` poly2tri triangulation;
       `pattern-cloth.js` XPBD distance/bend/seam/pressure; the §6.6 stability protocol;
       `preview3d` settled cache). *~6–10.*

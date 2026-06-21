@@ -68,6 +68,38 @@ for (const m of faces) {
 }
 ok(flipped > 0 && fwd > 0, `inward panels U-flipped (mixed orientation: ${flipped} flipped, ${fwd} forward)`);
 
+console.log('=== freeform fold render: bag with a strap (arched handle) ===');
+const paramsS = {
+  kind: 'freeform',
+  pieces: [
+    rect('base', 'Base', s, s), rect('front', 'Front', s, s), rect('back', 'Back', s, s),
+    rect('sideL', 'L', s, s), rect('sideR', 'R', s, s),
+    { ...rect('strap', 'Strap', 300, 20), count: 2 },   // long thin band, cut ×2
+  ],
+  seams: [
+    ...params.seams,   // the 8 box seams
+    { id: 's_strap_l', a: { piece: 'strap', edge: 1 }, b: { piece: 'front', edge: 2 }, foldAngle: null },
+    { id: 's_strap_r', a: { piece: 'strap', edge: 3 }, b: { piece: 'front', edge: 2 }, foldAngle: null },
+  ],
+};
+const gs = docToMesh({ kind: 'freeform', params: paramsS });
+gs.updateMatrixWorld(true);
+const sfaces = [], sstraps = [], sgaps = [];
+gs.traverse((o) => {
+  if (!o.userData) return;
+  if (o.userData.kind === 'face') sfaces.push(o);
+  if (o.userData.kind === 'strap') sstraps.push(o);
+  if (o.userData.kind === 'gap-seam') sgaps.push(o);
+});
+ok(sfaces.length === 5, `5 bag faces (strap excluded from faces), got ${sfaces.length}`);
+ok(sstraps.length >= 1, `at least one strap band mesh, got ${sstraps.length}`);
+ok(sstraps.every((m) => m.geometry.attributes.position.count >= 6), 'strap band triangulated');
+ok(gs.userData.fold && gs.userData.fold.mode === 'closed', `bag still closed, got ${gs.userData.fold && gs.userData.fold.mode}`);
+ok(sgaps.length === 0, 'no gap-seams (the strap did not degrade the bag)');
+const faceBox = new THREE.Box3(); sfaces.forEach((m) => faceBox.expandByObject(m));
+const strapBox = new THREE.Box3(); sstraps.forEach((m) => strapBox.expandByObject(m));
+ok(strapBox.max.y > faceBox.max.y, `strap arches above the bag top (${strapBox.max.y.toFixed(0)} > ${faceBox.max.y.toFixed(0)})`);
+
 console.log('=== degradation: freeform without seams ===');
 const g2 = docToMesh({ kind: 'freeform', params: { pieces: [rect('a', 'A', 10, 10)], seams: [] } });
 ok(g2.isObject3D && g2.children.length === 0, 'no-seams freeform -> empty group (never throws/blanks)');
