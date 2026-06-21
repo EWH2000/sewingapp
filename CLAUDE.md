@@ -174,5 +174,10 @@ to the opposite face. Additive per-piece **`role`** (`clonePiece`+editor `restor
 `verify-fold-mesh.mjs` (15); box-mesh/print spine/calibration gate untouched. A count×2 *span*
 strap renders as a **parallel pair** (offset along the bag edges); a count×2 *grab* mirrors to the
 opposite face. **Still deferred:** strap bands are plain leather (no pattern texture); notch
-`{edge,t,type}` + anchors UI; dart self-seams; atelier re-skin. **Next: M4** (Step 3a inflated bag). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md` + `PREVIEW.md`;
-`HANDOFF-strap.md` was the strap starting orders, `HANDOFF-M3-fold.md` the M3 ones.
+`{edge,t,type}` + anchors UI; dart self-seams; atelier re-skin. **Next: M4** (Step 3a inflated bag). **M4 prep layer DONE** (headless, no visible change): vendored `poly2tri.js` +
+`pattern-mesh.js` (`triangulatePiece` → sim mesh with distance/bend constraints; `seamPairs` →
+arc-length seam node pairing) + tests `verify-mesh.mjs` (15) / `verify-seam-correspondence.mjs`
+(16). **The rest of M4 (the XPBD cloth solver `pattern-cloth.js` → inflated bag → render + cache)
+has its own starting orders in `HANDOFF-M4-cloth.md`.** Build-tracking + locked decisions live in
+`HANDOFF-3d-preview.md` + `PREVIEW.md`; `HANDOFF-strap.md` was the strap starting orders,
+`HANDOFF-M3-fold.md` the M3 ones.

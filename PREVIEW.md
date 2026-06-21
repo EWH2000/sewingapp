@@ -918,6 +918,7 @@ focused sessions; estimates, not commitments — 3b especially.)
     fold as the warm start: §6.6 stitch-up (zero-gravity, eased seam stiffness, small substeps
     + velocity clamp), weld, inflate (volume/pressure), settle; then the `preview3d` drape view
     + `preview.html` detail slider + the `preview3d` settled cache. Ends in her hands-on gate.
+    **Full starting orders: `HANDOFF-M4-cloth.md`.**
 - [ ] **M5 — Step 3b garment on a form (~10–20).** `body-form.js` (loft + analytic
   ellipse collider) driven by `body` measurements; gravity drape, pinning + timed
   release, spatial-hash self-collision, fabric presets, curves/ease/darts in the drape.
