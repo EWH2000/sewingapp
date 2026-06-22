@@ -194,11 +194,12 @@ toggle, a **"Settling…"** badge (double-rAF so it paints before the blocking s
 cache** in the doc (`params.preview3d`: int16@0.1mm + base64, `geomHash`-keyed — instant reopen,
 re-solves only on an edit/detail/floor change; opaque `params_json`, no server change). `pattern-cloth.js`
 also exports `geomHash`/`encodeDrape`/`decodeDrape`. Box/M3-fold paths + print spine + calibration gate
-byte-identical. Tests: `tools/preview/verify-cloth.mjs` (26) + `verify-cloth-mesh.mjs` (16); the prep
+byte-identical. Tests: `tools/preview/verify-cloth.mjs` (26) + `verify-cloth-mesh.mjs` (18); the prep
 layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) + `verify-fold.mjs` (61) /
-`verify-fold-mesh.mjs` (15) stay green. **Deferred — NEXT: strap SNAP-TO-SURFACE** (handles anchor at
-the *folded* rim, so on the puffed bag they sit slightly inside — owner confirmed she wants them snapped
-to the settled surface); then welding/true-volume, plain-leather strap texture — all leaning into **M5**
-(Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md`
+`verify-fold-mesh.mjs` (15) stay green. **Strap SNAP-TO-SURFACE DONE (2026-06-22, owner gate cleared):**
+the drape view snaps each handle anchor from the folded rim to the nearest settled surface node
+(`preview3d.snapToSurface`), so the handle attaches flush to the inflated bag (the fold view keeps the
+raw rim anchors). **Deferred — NEXT:** welding/true-volume, plain-leather strap texture — all leaning
+into **M5** (Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md`
 + `PREVIEW.md`; `HANDOFF-M4-cloth.md` was the M4 cloth starting orders, `HANDOFF-strap.md` the strap,
 `HANDOFF-M3-fold.md` the M3 ones.

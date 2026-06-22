@@ -219,8 +219,8 @@ function archCurve(P0, P1, lenMm) {
   return make((lo + hi) / 2);
 }
 
-function addStraps(group, fold) {
-  const straps = (fold && fold.straps) || [];
+function addStraps(group, src) {
+  const straps = (src && src.straps) || [];   // src = the fold (raw rim anchors) OR a snapped {straps}
   if (!straps.length) return;
   const up = new THREE.Vector3(0, 1, 0);
   const mat = new THREE.MeshStandardMaterial({ color: LEATHER, side: THREE.DoubleSide, roughness: 0.85, metalness: 0.05 });
@@ -246,6 +246,7 @@ function addStraps(group, fold) {
     const band = new THREE.Mesh(strapRibbonGeometry(curve, st.widthMm, 48, frame), mat);
     band.userData.kind = 'strap';
     band.userData.pieceId = st.piece;
+    band.userData.anchors = a;     // the anchors actually used (snapped, on the drape path)
     group.add(band);
   }
 }
@@ -452,10 +453,31 @@ export function drapeToGroup(pattern, solveResult, fold, opts = {}) {
     group.add(m);
   }
 
-  if (fold) addStraps(group, fold);
+  // Straps: snap each handle anchor from the FOLDED rim (where foldDoc placed it, on the rigid
+  // warm-start shape) to the nearest SETTLED surface node, so the handle attaches flush to the
+  // inflated bag instead of floating slightly inside it. (The M3 fold view keeps the raw rim
+  // anchors — its faces ARE at the folded rim, so no snap there.)
+  if (fold && fold.straps && fold.straps.length) {
+    const straps = fold.straps.map((st) => Object.assign({}, st, {
+      anchors: (st.anchors || []).map((a) => snapToSurface(a, nodes)),
+    }));
+    addStraps(group, { straps });
+  }
   group.userData.drape = { mode: solveResult.mode, energy: solveResult.energy, pieceCount: ranges.length, straps: (fold && fold.straps) || [] };
   group.updateMatrixWorld(true);
   return group;
+}
+
+// Nearest settled mesh node to a world point (for snapping strap anchors onto the drape).
+// Nearest-node is enough: a rim point's closest node is a boundary node (interior nodes are
+// inset), within ~h/2 of the true surface — fine for a handle attach point.
+function snapToSurface(a, nodes) {
+  let best = a, bd = Infinity;
+  for (const n of nodes) {
+    const dx = n[0] - a[0], dy = n[1] - a[1], dz = n[2] - a[2], d = dx * dx + dy * dy + dz * dz;
+    if (d < bd) { bd = d; best = n; }
+  }
+  return [best[0], best[1], best[2]];
 }
 
 // ── frameObject: aim + distance the camera so `obj` fits, orbit target at its center ──

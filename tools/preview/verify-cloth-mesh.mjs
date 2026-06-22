@@ -105,6 +105,13 @@ console.log('=== drape render: strap tote (one arched handle rides on top) ===')
   const faceBox = new THREE.Box3(); faces.forEach((m) => faceBox.expandByObject(m));
   const strapBox = new THREE.Box3(); straps.forEach((m) => strapBox.expandByObject(m));
   ok(strapBox.max.y > faceBox.max.y, `handle arches above the bag top (${strapBox.max.y.toFixed(0)} > ${faceBox.max.y.toFixed(0)})`);
+  // snap-to-surface: the rendered handle's anchors coincide with SETTLED mesh nodes, and the
+  // snap actually moved them off the rigid-fold rim (the inflated surface shifted).
+  const nearestNode = (p) => { let bd = Infinity; for (const n of res.nodes) { const d = Math.hypot(n[0] - p[0], n[1] - p[1], n[2] - p[2]); if (d < bd) bd = d; } return bd; };
+  const used = straps[0].userData.anchors || [];
+  ok(used.length >= 1 && used.every((p) => nearestNode(p) < 1e-6), 'handle anchors snapped onto settled mesh nodes');
+  const raw = (fold.straps[0] && fold.straps[0].anchors) || [];
+  ok(raw.length && raw.some((p) => nearestNode(p) > 0.5), `raw fold-rim anchors sat off the settled surface (snap moved them; max ${Math.max.apply(null, raw.map(nearestNode)).toFixed(1)} mm)`);
 }
 
 console.log('=== drape render: cached blob round-trips into the same group ===');

@@ -160,7 +160,7 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
         panel **Type: Auto/Panel/Strap**. count×2 grab → opposite-face mirror; count×2 **span** →
         a SINGLE bridging handle (count = cut quantity; the parallel-pair behavior was a bug, fixed
         2026-06-21 during M4). Tests `verify-fold.mjs` (61) + `verify-fold-mesh.mjs` (15).
-        *Deferred: plain-leather bands (no pattern texture); strap snap-to-surface (an M4 deferral).*
+        *Deferred: plain-leather bands (no pattern texture). (Strap snap-to-surface DONE 2026-06-22.)*
 - [x] **M4** — Step 3a inflated bag. *DONE 2026-06-21 (owner gate cleared on her touchscreen
       laptop). `pattern-cloth.js` XPBD solver (warm-start from the M3 fold; per-seam direction
       derived from the warm start; §6.6 zero-gravity eased stitch-up + velocity clamp; per-face
@@ -172,10 +172,10 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
       geomHash-keyed, opaque — no server change). Tests `verify-cloth.mjs` (26) +
       `verify-cloth-mesh.mjs` (16). **Corrected the spec:** §6.4's "stretch balances pressure" is
       a knife-edge buckling threshold on a free-top bag (bend can't damp the global mode) — the
-      per-node tether is the robustness fix. **Deferred → NEXT: strap SNAP-TO-SURFACE**
-      (owner-confirmed: handles anchor at the folded rim, sit slightly inside the puffed bag —
-      snap them to the settled surface); then weld/true-volume, plain-leather strap texture. Also
-      fixed a span-strap count×2 bug (parallel pair → single handle).* **← warm start for M5.**
+      per-node tether is the robustness fix. **Strap snap-to-surface DONE 2026-06-22** — the drape
+      view snaps each handle anchor to the nearest settled node so handles attach flush (`verify-
+      cloth-mesh.mjs` now 18). **Deferred → NEXT:** weld/true-volume, plain-leather strap texture.
+      Also fixed a span-strap count×2 bug (parallel pair → single handle).* **← warm start for M5.**
 - [ ] **M5** — Step 3b garment on a form (`body-form.js` lofted dress form + analytic
       ellipse collider from `body` measurements; gravity drape; pinning + timed release;
       spatial-hash self-collision; fabric presets; curves/ease/darts in the drape). The

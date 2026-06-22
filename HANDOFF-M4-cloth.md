@@ -7,10 +7,10 @@
 > tether** (≤5% of the bag diagonal) on top of per-face pressure — §6.4's "stretch balances pressure"
 > turned out to be a knife-edge buckling threshold on a free-top bag, so the tether is what makes it
 > round-not-balloon robustly; **(2)** v1 does **not** weld (stiff zero-rest seam springs instead), to
-> keep one piece per node for clean texturing. **Next (deferred): strap snap-to-surface** (owner-
-> confirmed want — handles anchor at the folded rim, so they sit slightly inside the puffed bag). The
-> live status is in `CLAUDE.md` + `PREVIEW.md §9` + `HANDOFF-3d-preview.md`. The starting orders below
-> are kept for the record.
+> keep one piece per node for clean texturing. **Follow-up — strap snap-to-surface — DONE 2026-06-22**
+> (the drape view snaps each handle anchor to the nearest settled node, so handles attach flush to the
+> puffed bag, not the folded rim). The live status is in `CLAUDE.md` + `PREVIEW.md §9` +
+> `HANDOFF-3d-preview.md`. The starting orders below are kept for the record.
 
 > **For the next session.** Start in `~/sewingapp/`. Read, in order: `CLAUDE.md` (app guide +
 > live status), `DESIGN.md` (architecture + locked decisions), `PRINTING.md` (the sacred print
@@ -184,6 +184,8 @@ rhythm: build → deploy → owner eyeballs → "looks good" → docs + commit.
 render/UI/cache, deployed, owner gated it — "looks really good." Inflation is a gentle, robust puff
 (per-node tether, not raw pressure). Also fixed a reported span-strap `count×2` bug (it rendered a
 parallel pair; a side-to-side spanning strap is one bridging handle regardless of cut count).
-**Owner's one explicit follow-up: strap SNAP-TO-SURFACE** — the handles currently anchor at the
-*folded* (warm-start) rim, so on the inflated bag they sit a little inside the surface; snap each
-anchor to the nearest settled mesh node. That's the lead item for the next strap/M4-polish pass.
+**Owner's one explicit follow-up: strap SNAP-TO-SURFACE — DONE 2026-06-22 ("connects perfectly").**
+The drape view now snaps each handle anchor from the folded (warm-start) rim to the nearest settled
+mesh node (`preview3d.snapToSurface`), so handles attach flush to the inflated surface. The fold view
+keeps the raw rim anchors (its faces are at the folded rim). The next strap/M4-polish items are
+plain-leather strap texture + (optional) welding/true-volume — all leaning into M5.

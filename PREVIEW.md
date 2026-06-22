@@ -923,11 +923,11 @@ focused sessions; estimates, not commitments — 3b especially.)
   prep layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) green. **Corrected the
   spec:** per-face pressure is NOT self-limiting on a free-top-edge bag (it buckles at a knife-edge
   threshold; bend can't damp it — it's a global mode), so the per-node tether is what makes
-  inflation robust across her real totes. **Deferred — NEXT: strap snap-to-surface** (handles
-  anchor at the folded rim, sit slightly inside the puffed bag — owner confirmed she wants them
-  snapped); then welding/true-volume, plain-leather strap texture, notch/dart authoring — leaning
-  into M5. Also this session: fixed a span-strap `count×2` bug (was a parallel pair; now a single
-  bridging handle). **Starting orders were `HANDOFF-M4-cloth.md`.**
+  inflation robust across her real totes. **Strap snap-to-surface DONE (2026-06-22):** the drape
+  view snaps each handle anchor from the folded rim to the nearest settled node, so handles attach
+  flush to the inflated bag. **Deferred — NEXT:** welding/true-volume, plain-leather strap texture,
+  notch/dart authoring — leaning into M5. Also this session: fixed a span-strap `count×2` bug (was a
+  parallel pair; now a single bridging handle). **Starting orders were `HANDOFF-M4-cloth.md`.**
   - [x] **Prep layer (2026-06-21, headless).** Vendored `poly2tri.js`; `pattern-mesh.js`
     triangulates a piece into a sim mesh (boundary resampled to ~h with authored-edge+t tags,
     interior Steiner grid, CDT, distance+bend constraints) and pairs seam nodes by arc-length
