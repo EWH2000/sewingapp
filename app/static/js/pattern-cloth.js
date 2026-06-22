@@ -73,15 +73,90 @@
     compliance: { stretch: 1e-8, bend: 2e-2, seam0: 1e-1, seam1: 1e-6 },
   };
 
+  // Fabric presets (M5c garments): bend compliance is the dominant visual lever (denim low →
+  // few large folds; silk high → many small folds); mass scales the lumped node mass (heavier
+  // → resists deformation, holds folds). Stretch stays near-rigid (wovens barely stretch).
+  const FABRICS = {
+    cotton: { stretch: 1e-8, bend: 8e-3, mass: 1.0 },
+    denim:  { stretch: 5e-9, bend: 2e-3, mass: 2.2 },
+    silk:   { stretch: 2e-8, bend: 4e-2, mass: 0.5 },
+    linen:  { stretch: 1e-8, bend: 1.4e-2, mass: 1.2 },
+  };
+  const G_MM = 9810;   // gravity, mm/s²
+
+  const isStrap = (p, seams) => (PF() && PF().isStrapPiece) ? PF().isStrapPiece(p, seams) : false;
+  function pieceBBoxY(nodes) { let lo = Infinity, hi = -Infinity; for (const n of nodes) { if (n.y < lo) lo = n.y; if (n.y > hi) hi = n.y; } return { lo, hi, H: Math.max(1, hi - lo) }; }
+  function pieceBBoxX(nodes) { let lo = Infinity, hi = -Infinity; for (const n of nodes) { if (n.x < lo) lo = n.x; if (n.x > hi) hi = n.x; } return { lo, hi, W: Math.max(1, hi - lo) }; }
+  function inferRole(p, idx) {
+    const n = (p.name || "").toLowerCase();
+    const skirt = /skirt/.test(n), back = /back/.test(n), base = back ? "back" : "front";
+    if (skirt) return base + "-skirt";
+    if (/front|back/.test(n)) return base;
+    return idx % 2 ? "back" : "front";
+  }
+
+  // Warm start for GARMENTS: wrap each flat panel around the dress form — map it onto an arc of
+  // the form's ellipse at its band height (front panel → front half, skirt → hangs from the
+  // waist), pushed just OUTSIDE the surface, so seam endpoints start close + outside the body
+  // (placement is ~80% of stitch-up stability). Returns per-piece { wrap(lx,ly)→[x,y,z],
+  // pinTest(lx,ly)→bool } — pinTest marks the top edge (shoulders/waistband) held during drape.
+  // Degrade-never-blank: with no form/role it lays panels flat in front of where the form is.
+  function placeGarment(pieces, seams, form, ringAt, opts) {
+    const DEG = Math.PI / 180, skin = (opts && opts.skin) || 8, gap = (opts && opts.wrapGap) || 20;
+    const bandY = {}; for (const bd of form.bands) bandY[bd.role] = bd.y;
+    const shoulderY = bandY.shoulder, waistY = bandY.waist;
+    const FRONT = [-85 * DEG, 85 * DEG], BACK = [95 * DEG, 265 * DEG], SIDE_R = [40 * DEG, 140 * DEG], SIDE_L = [220 * DEG, 320 * DEG];
+    const place = {};
+    pieces.forEach((p, idx) => {
+      const nm = (p.name || "").toLowerCase();
+      // straps + finishing strips (waistband/binding/facing) are not draping panels.
+      if (isStrap(p, seams) || /waistband|binding|facing|band/.test(nm)) return;
+      const nodes = p.nodes || []; if (!nodes.length) return;
+      const bx = pieceBBoxX(nodes), by = pieceBBoxY(nodes);
+      const role = (p.place3d && p.place3d.role) || inferRole(p, idx);
+      // skirt/back can come from the role OR the piece name (robust to hand-authored naming).
+      const isBack = /back/.test(role) || (!/front/.test(role) && /back/.test(nm));
+      const isSkirt = /skirt/.test(role) || /skirt/.test(nm);
+      let sector = isBack ? BACK : FRONT;
+      if (/side/.test(role)) sector = /left|_l|-l/.test(role) ? SIDE_L : SIDE_R;
+      const yHi = isSkirt ? waistY : shoulderY;
+      const yLo = isSkirt ? waistY - by.H : waistY;        // skirt hangs from the waist by its own height
+      const wrap = (lx, ly) => {
+        const u = (lx - bx.lo) / bx.W, v = (ly - by.lo) / by.H;
+        const th = sector[0] + u * (sector[1] - sector[0]);
+        const wy = yLo + v * (yHi - yLo);
+        const r = ringAt(wy);
+        return [(r.a + skin + gap) * Math.sin(th), wy, (r.b + skin + gap) * Math.cos(th)];
+      };
+      const pinTest = (lx, ly) => (ly - by.lo) / by.H >= 0.92;   // top edge held
+      place[p.id] = { wrap, pinTest, role };
+    });
+    return { place };
+  }
+
+  // Sew direction for a garment seam, from the WRAPPED warm-start positions (the garment warm
+  // start has no rigid transform — mirror deriveFlip using wrap() of the edge endpoints).
+  function deriveFlipWrapped(gpA, A, ea, gpB, B, eb) {
+    if (!gpA || !gpB) return false;
+    const nA = A.nodes.length, nB = B.nodes.length;
+    const A0 = gpA.wrap(A.nodes[ea].x, A.nodes[ea].y), A1 = gpA.wrap(A.nodes[(ea + 1) % nA].x, A.nodes[(ea + 1) % nA].y);
+    const B0 = gpB.wrap(B.nodes[eb].x, B.nodes[eb].y), B1 = gpB.wrap(B.nodes[(eb + 1) % nB].x, B.nodes[(eb + 1) % nB].y);
+    const ht = Math.max(dist3(A0, B1), dist3(A1, B0)), hh = Math.max(dist3(A0, B0), dist3(A1, B1));
+    return hh < ht;
+  }
+
   // ── the solver ──────────────────────────────────────────────────────────────────────
   function solveDrape(pieces, seams, opts) {
     opts = opts || {};
     const h = opts.h > 0 ? opts.h : DEFAULTS.h;
-    const C = Object.assign({}, DEFAULTS.compliance, opts.compliance || {});
+    const garment = !!(opts.garment || opts.body);     // garment → gravity drape on a dress form
+    const fab = garment ? (FABRICS[opts.fabric] || FABRICS.cotton) : null;
+    const C = Object.assign({}, DEFAULTS.compliance, fab ? { stretch: fab.stretch, bend: fab.bend } : {}, opts.compliance || {});
+    const massScale = fab ? fab.mass : 1;
     const pressure = opts.pressure != null ? opts.pressure : DEFAULTS.pressure;
     const inflateCap = opts.inflateCap != null ? opts.inflateCap : DEFAULTS.inflateCap;
-    const maxStitch = opts.maxStitch != null ? opts.maxStitch : DEFAULTS.maxStitch;
-    const maxSettle = opts.maxSettle != null ? opts.maxSettle : DEFAULTS.maxSettle;
+    const maxStitch = opts.maxStitch != null ? opts.maxStitch : (garment ? 60 : DEFAULTS.maxStitch);
+    const maxSettle = opts.maxSettle != null ? opts.maxSettle : (garment ? 360 : DEFAULTS.maxSettle);
     const stitchIters = opts.stitchIters != null ? opts.stitchIters : DEFAULTS.stitchIters;
     const settleIters = opts.settleIters != null ? opts.settleIters : DEFAULTS.settleIters;
     const damp = opts.damp != null ? opts.damp : DEFAULTS.damp;
@@ -98,15 +173,31 @@
     const transforms = fold.transforms || {};
     const byId = {}; pieces.forEach((p) => { byId[p.id] = p; });
 
+    // GARMENT warm start: loft the dress form + wrap each panel onto it (NOT the rigid fold).
+    const BF = (typeof window !== "undefined") && window.BodyForm;
+    let form = null, ringAt = null, gplace = null;
+    if (garment && BF) {
+      form = BF.loft(opts.body || BF.DEFAULT_BODY);
+      ringAt = (y) => BF.ringAt(form, y);
+      gplace = placeGarment(pieces, seams, form, ringAt, opts).place;
+    }
+
     // ── assemble: triangulate each NON-strap (placed) piece and lift it into 3D ──
-    const pos = [], localUV = [], pieceRanges = [], meshes = {};
+    const pos = [], localUV = [], pieceRanges = [], meshes = {}, pins = [];
     for (const p of pieces) {
+      const gp = gplace ? gplace[p.id] : null;
       const T = transforms[p.id];
-      if (!T) continue;                                  // strap / dropped piece → excluded from the sim
+      // garment with a form → need a wrap; else fall back to the fold transform (degrade: a garment
+      // with no BodyForm drapes off the rigid fold under gravity rather than blanking).
+      if ((garment && gplace) ? !gp : !T) continue;
       const mesh = PM() && PM().triangulatePiece ? PM().triangulatePiece(p, h) : null;
       if (!mesh || !mesh.nodes.length) continue;
       const start = pos.length;
-      for (const nd of mesh.nodes) { pos.push(applyT(T, [nd[0], nd[1], 0])); localUV.push([nd[0], nd[1]]); }
+      for (const nd of mesh.nodes) {
+        pos.push(gp ? gp.wrap(nd[0], nd[1]) : applyT(T, [nd[0], nd[1], 0]));
+        localUV.push([nd[0], nd[1]]);
+        if (gp && gp.pinTest(nd[0], nd[1])) pins.push(pos.length - 1);   // top edge (shoulders/waist) → pinned
+      }
       meshes[p.id] = { mesh, start };
       pieceRanges.push({ piece: p.id, start, count: mesh.nodes.length });
     }
@@ -134,7 +225,9 @@
       if (!ma || !mb) continue;                                       // strap seam, or a dropped piece
       const TA = transforms[s.a.piece], TB = transforms[s.b.piece];
       const A = byId[s.a.piece], B = byId[s.b.piece];
-      const flip = deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
+      const flip = garment
+        ? deriveFlipWrapped(gplace[s.a.piece], A, s.a.edge, gplace[s.b.piece], B, s.b.edge)
+        : deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
       const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
       for (const pr of pairs) { const gi = ma.start + pr[0], gj = mb.start + pr[1]; kI.push(gi); kJ.push(gj); seamLinks.push([gi, gj]); }
     }
@@ -143,7 +236,7 @@
     const mass = new Float64Array(N);
     for (const t of tris) { const ar = triArea2D(localUV[t[0]], localUV[t[1]], localUV[t[2]]) / 3; mass[t[0]] += ar; mass[t[1]] += ar; mass[t[2]] += ar; }
     const invm = new Float64Array(N);
-    for (let i = 0; i < N; i++) invm[i] = mass[i] > 1e-9 ? 1 / mass[i] : 0;
+    for (let i = 0; i < N; i++) invm[i] = mass[i] > 1e-9 ? 1 / (mass[i] * massScale) : 0;   // fabric weight
 
     // ── state: position-Verlet (X current, P previous; velocity is implicit) ──
     const X = new Float64Array(3 * N), Pp = new Float64Array(3 * N);
@@ -196,7 +289,25 @@
       }
     }
 
-    // One XPBD substep: integrate (inertia + optional pressure), project K iters, clamp move.
+    // Garment forces (no-ops for the bag path — set by the garment driver below).
+    let gAccel = 0;          // per-substep downward displacement (mm); = G·dt² eased in
+    let collideOn = false;   // body collision against the dress form
+    // One-sided analytic body collision: any node inside the form → project to the surface +
+    // skin, and zero its velocity there (pseudo-friction, so the garment grips, not slides off).
+    function bodyProject() {
+      if (!form || !BF) return;
+      for (let i = 0; i < N; i++) {
+        if (invm[i] === 0) continue;                        // pins don't collide
+        const o = 3 * i;
+        if (BF.insideForm(form, [X[o], X[o + 1], X[o + 2]])) {
+          const s = BF.nearestSurface(form, [X[o], X[o + 1], X[o + 2]], 6);
+          X[o] = s.point[0]; X[o + 1] = s.point[1]; X[o + 2] = s.point[2];
+          Pp[o] = X[o]; Pp[o + 1] = X[o + 1]; Pp[o + 2] = X[o + 2];
+        }
+      }
+    }
+
+    // One XPBD substep: integrate (inertia + pressure/gravity), project K iters, clamp, collide.
     function substep(iters, alphaSeam, P) {
       if (P > 0) accumulatePressure(P);
       for (let i = 0; i < N; i++) {
@@ -204,7 +315,8 @@
         for (let d = 0; d < 3; d++) {
           const o = 3 * i + d, cur = X[o];
           let nx = cur + (cur - Pp[o]) * (1 - damp);        // damped inertia
-          if (P > 0 && wi) nx += pforce[o] * wi;             // pressure displacement (dt² folded into P)
+          if (P > 0 && wi) nx += pforce[o] * wi;             // pressure displacement (bag)
+          if (gAccel && d === 1 && wi > 0) nx += gAccel;     // gravity (garment): mass-independent, pins excluded
           Pp[o] = cur; X[o] = nx;
         }
       }
@@ -223,7 +335,35 @@
         const fin = Math.min(mv, vmax);
         if (fin > maxMove) maxMove = fin;
       }
+      if (collideOn) bodyProject();
       return maxMove;
+    }
+
+    // ── GARMENT (M5c): wrap warm start → zero-g stitch-up (pins on) → gravity ramp + body
+    // collision → settle. A separate driver from the bag's inflate path; same XPBD substep. ──
+    if (garment) {
+      const gSettleTol = 0.015 * h;
+      const gFull = -G_MM * dt2 * (opts.gravity != null ? opts.gravity : 1);   // downward, mm/substep
+      const savedInvm = pins.map((i) => invm[i]);
+      for (const i of pins) invm[i] = 0;                  // pin shoulders/waist for the whole drape (hangs from its support)
+      collideOn = !!form;                                  // body collision (warm start is outside, so gentle)
+      for (let k = 0; k < maxStitch; k++) {                // Phase 1: zero-gravity eased stitch-up
+        const s = maxStitch > 1 ? k / (maxStitch - 1) : 1;
+        const alphaSeam = Math.exp(lerp(Math.log(C.seam0), Math.log(C.seam1), smoothstep(s)));
+        substep(stitchIters, alphaSeam, 0);
+      }
+      let genergy = 0, gconv = false;                      // Phase 2: ease gravity in + settle on the form
+      const gRamp = Math.min(40, Math.max(1, Math.round(maxSettle * 0.15)));
+      for (let k = 0; k < maxSettle; k++) {
+        gAccel = gFull * smoothstep(Math.min(1, k / gRamp));
+        genergy = substep(settleIters, C.seam1, 0);
+        if (k > gRamp && genergy < gSettleTol) { gconv = true; break; }
+      }
+      for (let j = 0; j < pins.length; j++) invm[pins[j]] = savedInvm[j];
+      const gnodes = [];
+      for (let i = 0; i < N; i++) gnodes.push([X[3 * i], X[3 * i + 1], X[3 * i + 2]]);
+      const gmode = (!form || !pins.length) ? "degraded" : (gconv ? "settled" : "warm");
+      return { nodes: gnodes, tris, pieceRanges, localUV, seamLinks, welds: [], mode: gmode, energy: round4(genergy) };
     }
 
     // ── Phase B+C: zero-gravity stitch-up (gravity+pressure OFF; ease seam stiffness) ──
@@ -311,6 +451,16 @@
     const parts = [];
     for (const p of pieces || []) { parts.push(p.id); for (const n of p.nodes) parts.push(q(n.x), q(n.y)); }
     for (const s of seams || []) parts.push(s.id, s.a.piece, s.a.edge, s.b.piece, s.b.edge, flipBit(s.anchors));
+    // Garment drape inputs — only when present, so a BAG's hash is byte-identical to before.
+    if (opts.garment || opts.body) {
+      const b = opts.body || {};
+      parts.push("g=1", "fab=" + (opts.fabric || "cotton"), "body=" + [b.heightMm, b.bustMm, b.waistMm, b.hipMm].join(","));
+      for (const p of pieces || []) {
+        for (const d of (p.darts || [])) parts.push("d", d.edge, q(d.center), q(d.width), q(d.depth), d.kind);
+        for (const k in (p.edges || {})) parts.push("e", k, JSON.stringify(p.edges[k].curve));
+        if (p.place3d) parts.push("p3", p.place3d.role || "", p.place3d.wrap || "");
+      }
+    }
     parts.push("h=" + (opts.h > 0 ? opts.h : DEFAULTS.h), "root=" + (opts.root || ""), "v=" + SIM_VERSION);
     return fnv1a(parts.join("\x1f"));
   }

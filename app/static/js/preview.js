@@ -131,7 +131,8 @@ function mountFreeform(pat, ctx) {
   let view = canDrape ? 'inflated' : 'fold';   // inflated is the default when the solver is present
   let detailH = 20;                            // Standard
   let foldRoot = params.foldRoot || null;
-  const hasBody = !!(params.body && window.BodyForm);   // garment → show the dress form (M5b)
+  const hasBody = !!(params.body && window.BodyForm);   // garment → show the dress form (M5b) + gravity drape (M5c)
+  let fabric = params.fabric || 'cotton';
 
   let curGroup = null, curShadow = null, formGroup = null, formShadow = null;
 
@@ -196,13 +197,20 @@ function mountFreeform(pat, ctx) {
   function renderDrape(result, fold) {
     const group = drapeToGroup(pat, result, fold, { makeTexture: (p) => pieceFaceTexture(p, UNIT) });
     if (!place(group)) { setMsg('Add seams in Sew mode to inflate this pattern.'); return; }
-    fillDrapeSpec(group.userData.drape, detailH);
+    fillDrapeSpec(group.userData.drape, detailH, hasBody);
     setMsg(''); reveal();
   }
 
-  // Build the inflated drape: cache hit → decode (instant); miss → solve (settling badge) + cache.
+  // Build the drape: a GARMENT (doc has `body`) drapes under gravity on the dress form; a bag
+  // inflates. cache hit → decode (instant); miss → solve (settling badge) + cache.
+  function solveOpts() {
+    const o = { h: detailH, root: foldRoot };
+    if (hasBody) { o.garment = true; o.body = params.body; o.fabric = fabric; }
+    return o;
+  }
   function buildDrape() {
-    const hash = PC.geomHash(pieces, seams, { h: detailH, root: foldRoot });
+    const o = solveOpts();
+    const hash = PC.geomHash(pieces, seams, o);
     const cache = params.preview3d;
     const fold = PF.foldDoc(pieces, seams, { root: foldRoot });   // straps (cheap, not cached)
     if (cache && cache.simVersion === PC.SIM_VERSION && cache.geomHash === hash && cache.h === detailH) {
@@ -213,7 +221,7 @@ function mountFreeform(pat, ctx) {
     // double-rAF so the badge paints BEFORE the synchronous solve blocks the main thread.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       let result;
-      try { result = PC.solveDrape(pieces, seams, { h: detailH, root: foldRoot }); }
+      try { result = PC.solveDrape(pieces, seams, o); }
       catch (e) { showSettling(false); console.warn('[preview] solve failed', e); setMsg('Could not settle this pattern.'); return; }
       showSettling(false);
       if (!result.nodes.length) { setMsg('Add seams in Sew mode to inflate this pattern.'); return; }
@@ -243,10 +251,27 @@ function mountFreeform(pat, ctx) {
     // hide the inflated button if the solver didn't load (fold-only fallback)
     if (!canDrape) btns.forEach((b) => { if (b.dataset.view === 'inflated') b.hidden = true; b.classList.toggle('is-on', b.dataset.view === 'fold'); });
   }
-  // Detail control (only re-solves when inflated)
+  // Detail control (only re-solves when inflated/draped)
   if (detailSel) {
     detailSel.value = String(detailH);
     detailSel.onchange = () => { detailH = +detailSel.value || 20; if (view === 'inflated' && canDrape) buildDrape(); };
+  }
+  // For a garment the "Inflated" view IS the gravity drape — relabel it "Draped".
+  if (hasBody && controlsEl) {
+    const ib = controlsEl.querySelector('.pv-seg__btn[data-view="inflated"]');
+    if (ib) ib.textContent = 'Draped';
+  }
+  // Fabric control (garments only) — re-solve on change; geomHash includes fabric so it re-keys.
+  const fabricSel = document.getElementById('pv-fabric');
+  if (fabricSel) {
+    if (hasBody) {
+      fabricSel.value = fabric;
+      show(fabricSel, true);
+      fabricSel.onchange = () => {
+        fabric = fabricSel.value || 'cotton'; params.fabric = fabric;
+        if (view === 'inflated' && canDrape) buildDrape(); else saveDoc(pat);
+      };
+    } else { show(fabricSel, false); }
   }
   // Floor-piece override — changing it invalidates the drape (geomHash includes foldRoot).
   setupFloor(pat, (root) => {
@@ -295,13 +320,15 @@ function saveDoc(pat) {
   }).catch((e) => console.warn('[preview] save failed', e));
 }
 
-// The inflated-drape readout: pieces, shape state, detail, handles.
-function fillDrapeSpec(drape, detailH) {
+// The drape readout: pieces, shape state, detail, handles. A garment is "Draped" (on the form
+// under gravity); a bag is "Inflated".
+function fillDrapeSpec(drape, detailH, garment) {
   if (!specGrid || !drape) return;
   const row = (k, v) => `<div class="pv-spec__row"><span class="pv-spec__k">${k}</span><span class="pv-spec__v">${v}</span></div>`;
-  const state = drape.mode === 'cached' ? 'Inflated (saved)'
-    : drape.mode === 'degraded' ? 'Inflated (open fold)'
-    : drape.mode === 'settled' ? 'Inflated' : 'Inflated (settling capped)';
+  const verb = garment ? 'Draped' : 'Inflated';
+  const state = drape.mode === 'cached' ? `${verb} (saved)`
+    : drape.mode === 'degraded' ? `${verb} (loose)`
+    : drape.mode === 'settled' ? verb : `${verb} (settling capped)`;
   specGrid.innerHTML = row('Pieces', String(drape.pieceCount)) + row('Shape', state)
     + row('Detail', DETAIL_LABEL[detailH] || (detailH + ' mm'))
     + (drape.straps && drape.straps.length ? row('Handles', String(drape.straps.length)) : '');

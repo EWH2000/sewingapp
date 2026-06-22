@@ -243,5 +243,23 @@ the form for any garment (doc has `body`), frames the form+garment union, and re
 (debounced save; the doc is mm, opaque `params_json`). The garment still lies flat (drape onto the form is
 M5c). Tests: `tools/preview/verify-body-form.mjs` (31 — circumferences match measurements, aspect asymmetry
 catches an a/b swap, height scales Y, insideForm/nearestSurface, re-loft, no overshoot, determinism, the
-translucent render); full suite green. **NEXT: M5c** — gravity drape (wrap warm-start, body collision,
-dart self-seams, self-collision, fabric presets) so the garment hangs ON the form.
+translucent render); full suite green.
+
+**M5c / Step-3b GRAVITY GARMENT DRAPE — basic drape DONE (2026-06-22, owner-gated — garments hang
+believably on the form).** A garment (doc with `body`) now **drapes under gravity ON the dress form**
+instead of lying flat. `pattern-cloth.js` `solveDrape` gains an **`opts.garment` branch** (the bag inflate
+path is byte-identical when off — `verify-cloth.mjs` 26 green): **warm start = `placeGarment` wraps each
+flat panel around the form** (front panel → front-half ellipse at its band height, skirt → hangs from the
+waist by its own height; pushed just outside the surface; robust to hand-authored naming + role; finishing
+strips/straps excluded; degrade-never-blank falls back to the fold); **gravity** replaces inflation pressure
+in the substep integrate (mass-independent — heavy fabric resists folding, doesn't fall slower; pins
+excluded; true scale `9810·dt²` < the `0.5h` clamp); **one-sided analytic body collision** (`BF.insideForm`→
+`nearestSurface`, horizontal push + pseudo-friction grip); **pins** the top edge (shoulders/waistband) so it
+hangs from its support; **fabric presets** (`FABRICS` cotton/linen/silk/denim → stretch/bend compliance +
+node mass). `geomHash` grows with body/fabric/garment (bag hash byte-identical). The form is repositioned to
+**float at anatomical heights** (hem ~0.42·height, shoulder ~0.84·height) so a skirt has room to hang.
+Preview: garments route to the garment drape, a **Fabric** control (`#pv-fabric`), the toggle reads
+**"Draped"**. Verified host-side on all 3 seeded garments: **0% cloth inside the body**, each hangs from its
+support. Tests: `tools/preview/verify-garment-drape.mjs` (15) + body-form repositioned (34); full suite green.
+**NEXT (M5c-step2): the bust dart shapes the bodice** (triangulatePiece cuts the wedge + selfSeamPairs sews
+the legs), then self-collision + settle tuning.

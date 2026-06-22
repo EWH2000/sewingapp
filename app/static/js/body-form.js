@@ -25,24 +25,22 @@
   // depth:width aspect (b/a). Human torsos are wider than deep. Fixed for M5b (the plan's
   // "fixed depth:width aspect") — a per-band override is the first tuning lever if needed.
   const ASPECT = 0.72;
-  // the lofted region (hem→shoulder) as a fraction of stature. The form is a torso+upper-thigh
-  // on the floor, not a full body; height scales this Y extent, girths stay put.
-  const TORSO_FRAC = 0.52;
   const DEFAULT_BODY = { heightMm: 1650, bustMm: 920, waistMm: 740, hipMm: 980 };
 
-  // Normalized silhouette, hem(yf=0) → shoulder(yf=1). `meas` ties a band to a measurement;
-  // `k` scales that measurement's circumference (1.0 = exactly the measurement). Bands without a
-  // direct measurement borrow the nearest governing one via k. The waist pinch + bust peak make
-  // the torso read as a dress form rather than a tube.
+  // Silhouette bands, each at its ANATOMICAL height as a fraction of stature (`yf` = height/
+  // stature). The limbless torso floats on an implied stand (hem ≈ mid-thigh, shoulder ≈ acromion)
+  // so a skirt/dress has room to HANG below the waist toward the floor. `meas` ties a band to a
+  // measurement; `k` scales that circumference (1.0 = exactly the measurement). The waist pinch +
+  // bust peak make it read as a dress form, not a tube.
   const PROFILE = [
-    { yf: 0.00, role: "hem",       meas: "hipMm",   k: 0.92 },  // mid-thigh stop, just under hip
-    { yf: 0.10, role: "thigh",     meas: "hipMm",   k: 0.98 },
-    { yf: 0.22, role: "hip",       meas: "hipMm",   k: 1.00 },  // widest lower band
-    { yf: 0.40, role: "waist",     meas: "waistMm", k: 1.00 },  // narrowest
-    { yf: 0.55, role: "underbust", meas: "waistMm", k: 1.06 },
-    { yf: 0.68, role: "bust",      meas: "bustMm",  k: 1.00 },  // bust peak
-    { yf: 0.82, role: "chest",     meas: "bustMm",  k: 0.84 },  // above-bust, narrows
-    { yf: 1.00, role: "shoulder",  meas: "bustMm",  k: 0.78 },  // shoulder band (no neck/arms)
+    { yf: 0.42, role: "hem",       meas: "hipMm",   k: 0.94 },  // mid-thigh stop
+    { yf: 0.47, role: "thigh",     meas: "hipMm",   k: 0.99 },
+    { yf: 0.53, role: "hip",       meas: "hipMm",   k: 1.00 },  // widest lower band
+    { yf: 0.62, role: "waist",     meas: "waistMm", k: 1.00 },  // natural waist (narrowest)
+    { yf: 0.68, role: "underbust", meas: "waistMm", k: 1.06 },
+    { yf: 0.73, role: "bust",      meas: "bustMm",  k: 1.00 },  // bust peak
+    { yf: 0.79, role: "chest",     meas: "bustMm",  k: 0.86 },  // above-bust, narrows
+    { yf: 0.84, role: "shoulder",  meas: "bustMm",  k: 0.80 },  // shoulder (acromion); no neck/arms
   ];
 
   // Ramanujan's first ellipse-perimeter approximation, factored for fixed aspect r = b/a:
@@ -82,27 +80,30 @@
   }
 
   // body {heightMm,bustMm,waistMm,hipMm} → a ring-stack descriptor. opts.rings = slice count.
+  // Bands sit at their anatomical world heights (yf·height), so the torso FLOATS (hem at
+  // ~0.42·height, shoulder at ~0.84·height) — a skirt hangs from the waist toward the floor.
   function loft(body, opts) {
     opts = opts || {};
     const b = fillBody(body);
     const aspect = opts.aspect || ASPECT;
     const profile = opts.profile || PROFILE;
-    const yMax = b.heightMm * (opts.torsoFrac || TORSO_FRAC);
+    const H = b.heightMm;
+    const yLo = profile[0].yf * H, yHi = profile[profile.length - 1].yf * H;
     // anchor rings: solve each band's semi-axis from its circumference, at its world height.
     const anchors = profile.map((band) => {
       const C = band.k * b[band.meas];
-      return { y: band.yf * yMax, a: semiAxesForCirc(C, aspect).a, role: band.role };
+      return { y: band.yf * H, a: semiAxesForCirc(C, aspect).a, role: band.role };
     });
     const bands = anchors.map((an) => ({ y: an.y, role: an.role, a: an.a, b: aspect * an.a }));
     // resample to a smooth stack of `rings` slices (default 48) from hem to shoulder.
     const nRings = Math.max(8, opts.rings || 48);
     const rings = [];
     for (let i = 0; i < nRings; i++) {
-      const y = (yMax * i) / (nRings - 1);
+      const y = yLo + ((yHi - yLo) * i) / (nRings - 1);
       const a = splineA(anchors, y);
       rings.push({ y: y, a: a, b: aspect * a, cx: 0, cz: 0 });
     }
-    return { rings, yMin: 0, yMax, body: b, bands, aspect };
+    return { rings, yMin: yLo, yMax: yHi, body: b, bands, aspect };
   }
 
   // ring (a,b) at height y by linear interpolation between bounding slices (clamped).
@@ -164,7 +165,7 @@
   }
 
   window.BodyForm = {
-    DEFAULT_BODY, ASPECT, TORSO_FRAC, PROFILE,
+    DEFAULT_BODY, ASPECT, PROFILE,
     ellipseK, semiAxesForCirc,
     loft, ringAt, insideForm, nearestSurface, signedDist, bandCircumferences,
   };

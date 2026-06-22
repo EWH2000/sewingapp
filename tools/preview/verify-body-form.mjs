@@ -70,8 +70,13 @@ ok(approx(BF.bandCircumferences(Sw).find((c) => c.role === "waist").circ, 820, 1
 ok(band("waist").a < Sw.bands.find((b) => b.role === "waist").a, "bigger waist → bigger semi-axis");
 ok(approx(BF.bandCircumferences(Sw).find((c) => c.role === "bust").circ, 920, 1), "bust band unchanged by a waist edit");
 
+console.log("=== form floats at anatomical height (room for a skirt below the waist) ===");
+ok(S.yMin > 0.35 * D.heightMm && S.yMin < 0.5 * D.heightMm, `hem floats at ~0.42·height (${S.yMin.toFixed(0)}mm)`);
+ok(S.yMax > 0.8 * D.heightMm && S.yMax < 0.88 * D.heightMm, `shoulder at ~0.84·height (${S.yMax.toFixed(0)}mm)`);
+ok(band("waist").y < band("bust").y && band("hip").y < band("waist").y, "hip < waist < bust in height (anatomical order)");
+
 console.log("=== no overshoot, all rings sane, determinism ===");
-let bad = 0; for (let i = 0; i <= 100; i++) { const rr = BF.ringAt(S, (S.yMax * i) / 100); if (!(rr.a > 0 && rr.b > 0) || rr.b / rr.a < 0.5 || rr.b / rr.a > 0.95) bad++; }
+let bad = 0; for (let i = 0; i <= 100; i++) { const rr = BF.ringAt(S, S.yMin + ((S.yMax - S.yMin) * i) / 100); if (!(rr.a > 0 && rr.b > 0) || rr.b / rr.a < 0.5 || rr.b / rr.a > 0.95) bad++; }
 ok(bad === 0, `100 sampled rings all positive + b/a in a sane band (${bad} bad)`);
 ok(JSON.stringify(BF.loft(D)) === JSON.stringify(BF.loft(D)), "loft is deterministic (deep-equal)");
 
@@ -93,7 +98,7 @@ if (P3 && P3.dressFormGroup) {
   ok(!!mesh, "contains a dressform mesh");
   ok(mesh && mesh.material && mesh.material.transparent && mesh.material.opacity < 1, "material is translucent");
   const box = new THREE.Box3().setFromObject(g), size = new THREE.Vector3(); box.getSize(size);
-  ok(Math.abs(box.min.y) < 1.0, `form seated on the floor (min.y ${box.min.y.toFixed(2)})`);
+  ok(Math.abs(box.min.y - S.yMin) < 1.0, `form floats at the hem band (min.y ${box.min.y.toFixed(0)} ≈ yMin ${S.yMin.toFixed(0)})`);
   ok(size.x > size.z, `bbox wider than deep (x ${size.x.toFixed(0)} > z ${size.z.toFixed(0)})`);
   ok(g.userData && g.userData.stack && BF.insideForm(g.userData.stack, [0, yB, 0]) === true,
      "group carries the collider stack (render + collision share one stack)");
