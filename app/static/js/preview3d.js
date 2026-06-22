@@ -278,6 +278,26 @@ function addGapSeams(group, params, fold) {
   group.add(line);
 }
 
+// Dashed "this seam is tearing / won't close" bridges on the DRAPED mesh (garment over-tension).
+// Draws the residual gap segments the solver flagged — strain.gapSegs is a flat world-space array
+// [ax,ay,az, bx,by,bz, …], so this survives the settled-mesh cache (no seamLinks needed). Red when
+// the seam won't close, brass-amber when merely snug. Additive + headless-safe (no-op without strain).
+function addStrainSeams(group, strain) {
+  const segs = strain && strain.gapSegs;
+  if (!segs || segs.length < 6) return;
+  const pts = [];
+  for (let i = 0; i + 5 < segs.length; i += 6) {
+    pts.push(new THREE.Vector3(segs[i], segs[i + 1], segs[i + 2]));
+    pts.push(new THREE.Vector3(segs[i + 3], segs[i + 4], segs[i + 5]));
+  }
+  const line = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineDashedMaterial({ color: strain.wontClose ? 0xff5a3c : 0xc8a86b, dashSize: 7, gapSize: 5, transparent: true, opacity: 0.95 }));
+  line.computeLineDistances();
+  line.userData.kind = 'strain-seam';
+  group.add(line);
+}
+
 const localBbox = (nodes) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of nodes) { if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y; if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; }
@@ -463,7 +483,8 @@ export function drapeToGroup(pattern, solveResult, fold, opts = {}) {
     }));
     addStraps(group, { straps });
   }
-  group.userData.drape = { mode: solveResult.mode, energy: solveResult.energy, pieceCount: ranges.length, straps: (fold && fold.straps) || [] };
+  if (solveResult.strain && solveResult.strain.overTension) addStrainSeams(group, solveResult.strain);
+  group.userData.drape = { mode: solveResult.mode, energy: solveResult.energy, pieceCount: ranges.length, straps: (fold && fold.straps) || [], strain: solveResult.strain || null };
   group.updateMatrixWorld(true);
   return group;
 }

@@ -932,10 +932,21 @@ focused sessions; estimates, not commitments — 3b especially.)
     triangulates a piece into a sim mesh (boundary resampled to ~h with authored-edge+t tags,
     interior Steiner grid, CDT, distance+bend constraints) and pairs seam nodes by arc-length
     honoring the fold's direction (`seamPairs`).
-- [ ] **M5 — Step 3b garment on a form (~10–20).** `body-form.js` (loft + analytic
-  ellipse collider) driven by `body` measurements; gravity drape, pinning + timed
-  release, spatial-hash self-collision, fabric presets, curves/ease/darts in the drape.
-  **Gate:** a simple flat garment drapes believably on a measurement-fit form.
+- [~] **M5 — Step 3b garment on a form (~10–20). LARGELY DONE (2026-06-22), gates cleared.**
+  `body-form.js` (loft + analytic ellipse collider) driven by `body`; gravity drape, pinning,
+  fabric presets, curves/darts in the drape. **Gate cleared** on her touchscreen laptop across
+  M5a (authoring foundation), M5b (parametric dress form), M5c-step1 (gravity drape), -step2 (dart
+  shaping), and **-step3 (bodice-gap fix + bounded stretch-to-fit + a "doesn't-close" warning —
+  "no more gaps")**. The bodice closes cleanly: stitch-up runs **unpinned** so the top seam sews
+  (it sat in the pinned band, frozen ~175 mm), then pins shoulder+waist (except a dart mouth) so it
+  doesn't droop to the hip; the seed bodice was re-scaled to fit + its shoulders crossed. See
+  CLAUDE.md for the full per-step status. **Still open (rolls into the gate above):**
+  spatial-hash **self-collision** + **settle tuning** — these would also tighten the one remaining
+  rough edge: a free-hanging skirt/dress **side seam doesn't fully close near the form's lower
+  edge** (~26–34 mm at Standard, more at Fine; a soft-body limitation, not a fit problem — it
+  correctly does not warn). Plus the **interactive editor authoring UI** (curve/dart/notch/
+  measurements on `/edit` — data model + print lowering already exist).
+  **Gate:** a simple flat garment drapes believably on a measurement-fit form. ✓
 - [ ] **M6 (optional, deferred) — TSL-compute acceleration / MPFB body.** Only if the
   CPU budget or dress-form fidelity proves limiting in real use.
 

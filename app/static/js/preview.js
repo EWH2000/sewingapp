@@ -214,7 +214,8 @@ function mountFreeform(pat, ctx) {
     const cache = params.preview3d;
     const fold = PF.foldDoc(pieces, seams, { root: foldRoot });   // straps (cheap, not cached)
     if (cache && cache.simVersion === PC.SIM_VERSION && cache.geomHash === hash && cache.h === detailH) {
-      renderDrape(PC.decodeDrape(cache), fold);
+      const dec = PC.decodeDrape(cache); dec.strain = cache.strain || null;   // rehydrate the fit warning
+      renderDrape(dec, fold);
       return;
     }
     showSettling(true);
@@ -227,7 +228,7 @@ function mountFreeform(pat, ctx) {
       if (!result.nodes.length) { setMsg('Add seams in Sew mode to inflate this pattern.'); return; }
       renderDrape(result, fold);
       try {
-        params.preview3d = Object.assign(PC.encodeDrape(result), { geomHash: hash, h: detailH, settledAt: new Date().toISOString() });
+        params.preview3d = Object.assign(PC.encodeDrape(result), { geomHash: hash, h: detailH, settledAt: new Date().toISOString(), strain: result.strain || null });
         saveDoc(pat);
       } catch (e) { console.warn('[preview] cache save failed', e); }
     }));
@@ -329,9 +330,19 @@ function fillDrapeSpec(drape, detailH, garment) {
   const state = drape.mode === 'cached' ? `${verb} (saved)`
     : drape.mode === 'degraded' ? `${verb} (loose)`
     : drape.mode === 'settled' ? verb : `${verb} (settling capped)`;
-  specGrid.innerHTML = row('Pieces', String(drape.pieceCount)) + row('Shape', state)
+  let html = row('Pieces', String(drape.pieceCount)) + row('Shape', state)
     + row('Detail', DETAIL_LABEL[detailH] || (detailH + ' mm'))
     + (drape.straps && drape.straps.length ? row('Handles', String(drape.straps.length)) : '');
+  // Fit warning (garment over-tension): the pattern can't close on these measurements. The fabric
+  // already stretched to the limit to bridge — what remains is a tear. Shown only when flagged.
+  const st = drape.strain;
+  if (st && st.overTension) {
+    const warn = (msg) => `<div class="pv-spec__row pv-spec__warn"><span class="pv-spec__k">⚠ Fit</span><span class="pv-spec__v">${esc(msg)}</span></div>`;
+    html += st.wontClose
+      ? warn(`Doesn’t close — pattern too small here (gap ${Math.round(st.maxSeamGapMm)} mm)`)
+      : warn('Seams under tension — may not fit');
+  }
+  specGrid.innerHTML = html;
 }
 
 // The fold readout: piece count + whether the bag closes (and by how much if not).

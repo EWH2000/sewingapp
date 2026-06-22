@@ -29,7 +29,8 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 2;   // 2: garment gravity drape + dart welds (invalidates pre-dart cached drapes)
+  const SIM_VERSION = 3;   // 3: garment unpinned stitch-up + bounded stretch-to-fit + strain metric
+                           // 2: garment gravity drape + dart welds (invalidates pre-dart cached drapes)
 
   // ── tiny 3D vec / quaternion helpers (copied from pattern-fold.js; standalone) ──────
   const EPS = 1e-9;
@@ -105,7 +106,9 @@
     const DEG = Math.PI / 180, skin = (opts && opts.skin) || 8, gap = (opts && opts.wrapGap) || 20;
     const bandY = {}; for (const bd of form.bands) bandY[bd.role] = bd.y;
     const shoulderY = bandY.shoulder, waistY = bandY.waist;
-    const FRONT = [-85 * DEG, 85 * DEG], BACK = [95 * DEG, 265 * DEG], SIDE_R = [40 * DEG, 140 * DEG], SIDE_L = [220 * DEG, 320 * DEG];
+    // front/back sectors MEET at the sides (±90°) so a front↔back side seam's endpoints start
+    // coincident on the body's widest point (a small warm-start gap there never closes against the body).
+    const FRONT = [-90 * DEG, 90 * DEG], BACK = [90 * DEG, 270 * DEG], SIDE_R = [40 * DEG, 140 * DEG], SIDE_L = [220 * DEG, 320 * DEG];
     const place = {};
     pieces.forEach((p, idx) => {
       const nm = (p.name || "").toLowerCase();
@@ -128,7 +131,27 @@
         const r = ringAt(wy);
         return [(r.a + skin + gap) * Math.sin(th), wy, (r.b + skin + gap) * Math.cos(th)];
       };
-      const pinTest = (lx, ly) => (ly - by.lo) / by.H >= 0.92;   // top edge held
+      // A skirt hangs from its waist (top pinned, hem free). A bodice is FITTED shoulder-to-waist:
+      // anchor the waist too so it doesn't droop to the wider hip (which would split the side seam) —
+      // but leave any waist-dart MOUTH unpinned so the dart still sews shut (pinning the whole waist
+      // would hold the dart open). Compute each wedge dart's mouth u-range from its edge geometry.
+      const dartFreeU = [];
+      for (const d of (p.darts || [])) {
+        if (d.kind !== "wedge") continue;
+        const e = d.edge | 0, a = nodes[e], b = nodes[(e + 1) % nodes.length];
+        const elen = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const hw = Math.min(0.5, (d.width / 2) / elen + 0.04);          // half mouth in edge-fraction + margin
+        const x0 = a.x + Math.max(0, d.center - hw) * (b.x - a.x), x1 = a.x + Math.min(1, d.center + hw) * (b.x - a.x);
+        dartFreeU.push([(Math.min(x0, x1) - bx.lo) / bx.W, (Math.max(x0, x1) - bx.lo) / bx.W]);
+      }
+      const pinTest = isSkirt
+        ? (lx, ly) => (ly - by.lo) / by.H >= 0.92
+        : (lx, ly) => {
+            const v = (ly - by.lo) / by.H;
+            if (v >= 0.92) return true;                                  // shoulder line
+            const u = (lx - bx.lo) / bx.W;
+            return v <= 0.08 && !dartFreeU.some(([a, b]) => u >= a && u <= b);   // waist, except a dart mouth
+          };
       place[p.id] = { wrap, pinTest, role };
     });
     return { place };
@@ -218,7 +241,7 @@
 
     // seam constraints (zero rest length). Derive sew DIRECTION per seam from the warm-start
     // geometry (mirror pattern-fold.inferFlip), then pair nodes by arc-length via seamPairs.
-    const seamLinks = [], kI = [], kJ = [], weldI = [], weldJ = [];   // welds: hard dart closures
+    const seamLinks = [], kI = [], kJ = [], kSeam = [], weldI = [], weldJ = [];   // kSeam: doc seam id per pair (strain); welds: hard dart closures
     for (const s of seams) {
       if (s.a.piece === s.b.piece) continue;                          // self/dart seam — Step 3b
       const ma = meshes[s.a.piece], mb = meshes[s.b.piece];
@@ -229,7 +252,7 @@
         ? deriveFlipWrapped(gplace[s.a.piece], A, s.a.edge, gplace[s.b.piece], B, s.b.edge)
         : deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
       const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
-      for (const pr of pairs) { const gi = ma.start + pr[0], gj = mb.start + pr[1]; kI.push(gi); kJ.push(gj); seamLinks.push([gi, gj]); }
+      for (const pr of pairs) { const gi = ma.start + pr[0], gj = mb.start + pr[1]; kI.push(gi); kJ.push(gj); kSeam.push(s.id); seamLinks.push([gi, gj]); }
     }
     // DART self-seams (garments): sew each wedge dart's two legs shut WITHIN its piece, so the
     // dart collapses + shapes the panel (a bust dart rounds the bodice front). The mesh already
@@ -313,10 +336,14 @@
       for (let i = 0; i < N; i++) {
         if (invm[i] === 0) continue;                        // pins don't collide
         const o = 3 * i;
-        if (BF.insideForm(form, [X[o], X[o + 1], X[o + 2]])) {
-          const s = BF.nearestSurface(form, [X[o], X[o + 1], X[o + 2]], 6);
+        const px = X[o], py = X[o + 1], pz = X[o + 2];
+        if (BF.insideForm(form, [px, py, pz])) {
+          const s = BF.nearestSurface(form, [px, py, pz], 6);        // normal horizontal (nx,0,nz)
+          let vx = px - Pp[o], vz = pz - Pp[o + 2];                  // slide tangentially around the body,
+          const nx = s.normal[0], nz = s.normal[2], vn = vx * nx + vz * nz;   // grip vertically (vy→0) so it hangs
+          vx -= vn * nx; vz -= vn * nz;                             // from its pins — lets a side seam slide closed
           X[o] = s.point[0]; X[o + 1] = s.point[1]; X[o + 2] = s.point[2];
-          Pp[o] = X[o]; Pp[o + 1] = X[o + 1]; Pp[o + 2] = X[o + 2];
+          Pp[o] = X[o] - vx; Pp[o + 1] = X[o + 1]; Pp[o + 2] = X[o + 2] - vz;
         }
       }
     }
@@ -364,19 +391,86 @@
       return maxMove;
     }
 
-    // ── GARMENT (M5c): wrap warm start → zero-g stitch-up (pins on) → gravity ramp + body
-    // collision → settle. A separate driver from the bag's inflate path; same XPBD substep. ──
+    // Strain / "seam-tear" metric (GARMENT only, additive): per inter-piece-seam closure residual
+    // (the kI/kJ pairs — dart welds are weldI/weldJ, NOT here) + the worst structural stretch ratio.
+    // `overTension` drives the preview warning; `gapSegs` are the residual gap segments the 3D
+    // highlight draws (so it survives the settled-mesh cache without seamLinks). Pure read of X.
+    function computeStrain() {
+      // Warn on a clearly-too-small pattern: a large un-closed seam gap. The threshold clears the
+      // hanging-seam SOLVER noise floor — a FITTING skirt/dress side seam settles ~25–35 mm open near
+      // the form's lower edge (more at Fine detail), which is a settle-tuning limitation, NOT a fit
+      // problem — while a real misfit (child-size garment / a much larger body) gaps 100 mm+. A fitting
+      // bodice closes to ~7 mm. (Stretch ratio is reported but too detail-noisy to gate on.)
+      const GAP_T = opts.strainGapMm != null ? opts.strainGapMm : 50;        // mm
+      const SEG_T = 15;                                                       // mm: only highlight segments past this
+      const perSeam = {}; const order = [];
+      let maxGap = 0, sumGap = 0; const gapSegs = [];
+      for (let k = 0; k < nK; k++) {
+        const oi = 3 * kI[k], oj = 3 * kJ[k];
+        const d = Math.hypot(X[oi] - X[oj], X[oi + 1] - X[oj + 1], X[oi + 2] - X[oj + 2]);
+        if (d > maxGap) maxGap = d; sumGap += d;
+        const id = kSeam[k] || "?";
+        if (!perSeam[id]) { perSeam[id] = 0; order.push(id); }
+        if (d > perSeam[id]) perSeam[id] = d;
+        if (d > SEG_T) gapSegs.push(X[oi], X[oi + 1], X[oi + 2], X[oj], X[oj + 1], X[oj + 2]);
+      }
+      // fabric stretch = p95 of edge length/rest, over edges with a free node (skip pinned-pinned —
+      // frozen at the warm-start wrap, not fabric tension — and degenerate rests). p95 ignores the
+      // odd mesh sliver / dart-apex edge so the signal reflects broad tension, not a single triangle.
+      const ratios = [];
+      for (let c = 0; c < nS; c++) {
+        const rest = sR[c]; if (!(rest > 1e-6)) continue;
+        if (invm[sI[c]] === 0 && invm[sJ[c]] === 0) continue;
+        const oi = 3 * sI[c], oj = 3 * sJ[c];
+        ratios.push(Math.hypot(X[oi] - X[oj], X[oi + 1] - X[oj + 1], X[oi + 2] - X[oj + 2]) / rest);
+      }
+      ratios.sort((a, b) => a - b);
+      const maxStretch = ratios.length ? ratios[Math.min(ratios.length - 1, Math.floor(ratios.length * 0.95))] : 1;
+      const seamsOut = order.map((id) => ({ seam: id, gapMm: round4(perSeam[id]) })).sort((a, b) => b.gapMm - a.gapMm);
+      const maxSeamGapMm = round4(maxGap), maxStretchRatio = round4(maxStretch);
+      const wontClose = maxSeamGapMm > GAP_T;   // a too-small pattern can't reach around the body
+      return {
+        maxSeamGapMm, meanSeamGapMm: round4(nK ? sumGap / nK : 0), maxStretchRatio,
+        overTension: wontClose,
+        wontClose,
+        seams: seamsOut, gapSegs,
+      };
+    }
+
+    // ── GARMENT (M5c): wrap warm start → UNPINNED zero-g stitch-up (so the shoulder/top seam — which
+    // sits in the pinned band — actually sews) → pin the stitched shoulder/waist line → gravity ramp +
+    // body collision → settle → bounded stretch-to-fit reconciliation. A separate driver from the
+    // bag's inflate path; same XPBD substep. ──
     if (garment) {
       const gSettleTol = 0.015 * h;
       const gFull = -G_MM * dt2 * (opts.gravity != null ? opts.gravity : 1);   // downward, mm/substep
+      const stitchUnpinned = opts.stitchUnpinned !== false;                    // close the top seam BEFORE pinning (rollback: false)
+      const seam2 = (opts.compliance && opts.compliance.seam2) || 1e-9;        // reconciliation: seam beats stretch (stiffer than C.stretch)
+      const maxStretchFrac = opts.maxStretchFrac != null ? opts.maxStretchFrac : 0.15;  // per-edge stretch ceiling (woven tears ~15%)
+      const reconcileSteps = opts.reconcileSteps != null ? opts.reconcileSteps : 16;
       const savedInvm = pins.map((i) => invm[i]);
-      for (const i of pins) invm[i] = 0;                  // pin shoulders/waist for the whole drape (hangs from its support)
-      collideOn = !!form;                                  // body collision (warm start is outside, so gentle)
-      for (let k = 0; k < maxStitch; k++) {                // Phase 1: zero-gravity eased stitch-up
+      // Pin shoulders/waist IN PLACE with zero velocity (the Verlet inertia term applies regardless of
+      // invm, so Pp must be snapped to X or a freshly-pinned node keeps drifting). First push any pin
+      // that drifted INSIDE the body during the collision-free stitch-up back out to the surface — a
+      // pinned node skips collision forever, so an open neckline pinned inside would clip permanently.
+      const pinNow = () => { for (const i of pins) {
+        const o = 3 * i;
+        if (form && BF && BF.insideForm(form, [X[o], X[o + 1], X[o + 2]])) {
+          const s = BF.nearestSurface(form, [X[o], X[o + 1], X[o + 2]], 6);
+          X[o] = s.point[0]; X[o + 1] = s.point[1]; X[o + 2] = s.point[2];
+        }
+        invm[i] = 0; Pp[o] = X[o]; Pp[o + 1] = X[o + 1]; Pp[o + 2] = X[o + 2];
+      } };
+      collideOn = !!form;                                  // body collision ON throughout: a hanging skirt's side seam molds
+                                                           // CLOSED on the body this way (closing it in free space then settling
+                                                           // re-opens it), and an open neckline can't collapse inside + get pinned
+      if (!stitchUnpinned) pinNow();                       // legacy rollback: pin for the whole drape
+      for (let k = 0; k < maxStitch; k++) {                // Phase 1: zero-gravity eased stitch-up (UNPINNED → top seam sews)
         const s = maxStitch > 1 ? k / (maxStitch - 1) : 1;
         const alphaSeam = Math.exp(lerp(Math.log(C.seam0), Math.log(C.seam1), smoothstep(s)));
         substep(stitchIters, alphaSeam, 0);
       }
+      if (stitchUnpinned) pinNow();                        // NOW pin the stitched shoulder/waist line (hangs from its support)
       let genergy = 0, gconv = false;                      // Phase 2: ease gravity in + settle on the form
       const gRamp = Math.min(40, Math.max(1, Math.round(maxSettle * 0.15)));
       for (let k = 0; k < maxSettle; k++) {
@@ -384,11 +478,32 @@
         genergy = substep(settleIters, C.seam1, 0);
         if (k > gRamp && genergy < gSettleTol) { gconv = true; break; }
       }
+      // Phase 3: bounded stretch-to-fit reconciliation. Seams (seam2, stiffer than stretch) win where a
+      // gap remains; a per-edge stretch ceiling caps each structural edge at (1+maxStretchFrac)·rest, so a
+      // too-small garment STRETCHES to bridge (up to the limit, then the residual stays as a flagged gap)
+      // rather than gapping silently — and can't explode. Inert on a fitting garment (closed seams → Cv≈0).
+      gAccel = gFull;
+      for (let k = 0; k < reconcileSteps; k++) {
+        substep(settleIters, seam2, 0);
+        for (let c = 0; c < nS; c++) {
+          const rest = sR[c]; if (!(rest > 1e-6)) continue;
+          const oi = 3 * sI[c], oj = 3 * sJ[c];
+          const dx = X[oi] - X[oj], dy = X[oi + 1] - X[oj + 1], dz = X[oi + 2] - X[oj + 2];
+          const d = Math.hypot(dx, dy, dz), lim = rest * (1 + maxStretchFrac);
+          if (d > lim && d > EPS) {
+            const wi = invm[sI[c]], wj = invm[sJ[c]], w = wi + wj; if (w === 0) continue;
+            const corr = (d - lim) / d;
+            X[oi] -= (wi / w) * corr * dx; X[oi + 1] -= (wi / w) * corr * dy; X[oi + 2] -= (wi / w) * corr * dz;
+            X[oj] += (wj / w) * corr * dx; X[oj + 1] += (wj / w) * corr * dy; X[oj + 2] += (wj / w) * corr * dz;
+          }
+        }
+      }
+      const strain = computeStrain();
       for (let j = 0; j < pins.length; j++) invm[pins[j]] = savedInvm[j];
       const gnodes = [];
       for (let i = 0; i < N; i++) gnodes.push([X[3 * i], X[3 * i + 1], X[3 * i + 2]]);
       const gmode = (!form || !pins.length) ? "degraded" : (gconv ? "settled" : "warm");
-      return { nodes: gnodes, tris, pieceRanges, localUV, seamLinks, welds: [], mode: gmode, energy: round4(genergy) };
+      return { nodes: gnodes, tris, pieceRanges, localUV, seamLinks, welds: [], mode: gmode, energy: round4(genergy), strain };
     }
 
     // ── Phase B+C: zero-gravity stitch-up (gravity+pressure OFF; ease seam stiffness) ──

@@ -49,12 +49,15 @@ function skirt() {
 // 8 nodes: waist-L, waist-R, underarm-R, shoulder-R, neck-R, neck-L, shoulder-L, underarm-L.
 // e0 waist, e1 R-side(sewn), e2 R-armhole(curve,open), e3 R-shoulder(sewn), e4 neckline(curve,open),
 // e5 L-shoulder(sewn), e6 L-armhole(curve,open), e7 L-side(sewn).
+// Sized to the DEFAULT body (bust 920, waist 740): symmetric taper about the panel centre (245),
+// waist 390 + bust 490 per panel → front+back = waist 780 / bust 980 (a woven ease that closes on
+// the dress form — front+back used to be 520 mm, child-sized on an adult form → side seams gaped).
 function bodicePiece(id, name, role, { neckDip, dart }) {
   const nodes = [
-    N(0, 0), N(260, 0),               // waist L, R
-    N(260, 230), N(240, 420),         // underarm R, shoulder R
-    N(165, 400), N(95, 400),          // neck R, neck L
-    N(20, 420), N(0, 230),            // shoulder L, underarm L
+    N(50, 0), N(440, 0),              // waist L, R (390 wide, centred on 245)
+    N(490, 230), N(452, 420),         // underarm R (bust 490), shoulder R
+    N(311, 400), N(179, 400),         // neck R, neck L (neck gap 132)
+    N(38, 420), N(0, 230),            // shoulder L, underarm L
   ];
   const p = {
     id, name, count: 1, seamMm: 12, closed: true, place3d: { role },
@@ -73,8 +76,10 @@ function bodice() {
     name: "Example — Tank Bodice", body: Object.assign({}, DEFAULT_BODY),
     pieces: [front, back],
     seams: [
-      { a: { piece: "bo_front", edge: 3 }, b: { piece: "bo_back", edge: 3 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // R shoulder
-      { a: { piece: "bo_front", edge: 5 }, b: { piece: "bo_back", edge: 5 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // L shoulder
+      // The back wraps mirror-image of the front, so the shoulders CROSS (front-R ↔ back-L) just like
+      // the sides do — pairing e3↔e3 put the two shoulders on opposite sides of the body (270 mm apart).
+      { a: { piece: "bo_front", edge: 3 }, b: { piece: "bo_back", edge: 5 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // R shoulder (front R ↔ back L)
+      { a: { piece: "bo_front", edge: 5 }, b: { piece: "bo_back", edge: 3 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // L shoulder (front L ↔ back R)
       { a: { piece: "bo_front", edge: 1 }, b: { piece: "bo_back", edge: 7 } }, // R side
       { a: { piece: "bo_front", edge: 7 }, b: { piece: "bo_back", edge: 1 } }, // L side
     ],
@@ -85,18 +90,18 @@ function bodice() {
 function dress() {
   const bf = bodicePiece("dr_bf", "Dress Bodice Front", "front", { neckDip: 0.28, dart: true });
   const bb = bodicePiece("dr_bb", "Dress Bodice Back", "back", { neckDip: 0.10, dart: false });
-  // skirt panels whose WAIST edge (e2, top) ≈ the bodice waist width (260) so the waist seam zips;
-  // hem flares to 360. y=0 hem, y=560 waist.
+  // skirt panels whose WAIST edge (e2, top) = the new bodice waist width (390) so the waist seam zips;
+  // hem flares to 760/panel (A-line) so the skirt clears the hip (980) below the waist. y=0 hem, y=560 waist.
   const sf = { id: "dr_sf", name: "Dress Skirt Front", count: 1, seamMm: 12, closed: true, place3d: { role: "front-skirt", wrap: "front" },
-    nodes: [N(0, 0), N(360, 0), N(310, 560), N(50, 560)] };   // e0 hem, e1 R, e2 waist(260), e3 L
+    nodes: [N(0, 0), N(760, 0), N(575, 560), N(185, 560)] };   // e0 hem(760), e1 R, e2 waist(390), e3 L
   const sb = { id: "dr_sb", name: "Dress Skirt Back", count: 1, seamMm: 12, closed: true, place3d: { role: "back-skirt", wrap: "back" },
-    nodes: [N(0, 0), N(360, 0), N(310, 560), N(50, 560)] };
+    nodes: [N(0, 0), N(760, 0), N(575, 560), N(185, 560)] };
   return {
     name: "Example — Tank Dress", body: Object.assign({}, DEFAULT_BODY),
     pieces: [bf, bb, sf, sb],
     seams: [
-      { a: { piece: "dr_bf", edge: 3 }, b: { piece: "dr_bb", edge: 3 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // R shoulder
-      { a: { piece: "dr_bf", edge: 5 }, b: { piece: "dr_bb", edge: 5 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // L shoulder
+      { a: { piece: "dr_bf", edge: 3 }, b: { piece: "dr_bb", edge: 5 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // R shoulder (front R ↔ back L)
+      { a: { piece: "dr_bf", edge: 5 }, b: { piece: "dr_bb", edge: 3 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // L shoulder (front L ↔ back R)
       { a: { piece: "dr_bf", edge: 1 }, b: { piece: "dr_bb", edge: 7 } }, // bodice R side
       { a: { piece: "dr_bf", edge: 7 }, b: { piece: "dr_bb", edge: 1 } }, // bodice L side
       { a: { piece: "dr_sf", edge: 1 }, b: { piece: "dr_sb", edge: 3 } }, // skirt R side
@@ -109,20 +114,25 @@ function dress() {
 
 // ── build + POST ────────────────────────────────────────────────────────────────
 const EXAMPLES = [skirt(), bodice(), dress()];
+export { skirt, bodice, dress, bodicePiece, EXAMPLES, G };   // for tools/preview/verify-seed-bodice.mjs
 
 async function main() {
-  let existing;
+  // Default: idempotent skip-by-name (create only what's missing). SEED_OVERWRITE=1 UPDATES an
+  // existing example in place by its id (e.g. after a geometry fix), preserving id 5/6/7.
+  const overwrite = process.env.SEED_OVERWRITE === "1";
+  let byName;
   try {
     const r = await fetch(`${BASE}/patterns`);
     if (!r.ok) throw new Error(`GET /patterns → ${r.status}`);
-    existing = new Set((await r.json()).map((p) => p.name));
+    byName = new Map((await r.json()).map((p) => [p.name, p.id]));
   } catch (e) {
     console.error(`Couldn't reach ${BASE} (${e.message}). Is the container running + rebuilt with the GET /patterns route?`);
     process.exit(1);
   }
-  let created = 0, skipped = 0, failed = 0;
+  let created = 0, updated = 0, skipped = 0, failed = 0;
   for (const ex of EXAMPLES) {
-    if (existing.has(ex.name)) { console.log(`skip   "${ex.name}" (already exists)`); skipped++; continue; }
+    const existingId = byName.get(ex.name);
+    if (existingId != null && !overwrite) { console.log(`skip   "${ex.name}" (already exists; SEED_OVERWRITE=1 to update)`); skipped++; continue; }
     const doc = G.freeformToDoc({ name: ex.name, pieces: ex.pieces, seams: ex.seams, body: ex.body, gridMm: 5 });
     // sanity: every example must lower to a schema-3 doc with real print paths + carried seams.
     const cuts = (doc.paths || []).filter((p) => p.kind === "cut").length;
@@ -130,15 +140,20 @@ async function main() {
       console.error(`BUILD FAIL "${ex.name}": schema=${doc.schema} cuts=${cuts} seams=${doc.seams.length}/${ex.seams.length}`); failed++; continue;
     }
     try {
+      const payload = { name: ex.name, kind: "freeform", params: doc };
+      if (existingId != null) payload.id = existingId;   // update in place (preserve the id)
       const r = await fetch(`${BASE}/patterns`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: ex.name, kind: "freeform", params: doc }) });
+        body: JSON.stringify(payload) });
       if (!r.ok) throw new Error(`POST → ${r.status}`);
       const d = await r.json();
-      console.log(`create "${ex.name}" → id ${d.id} (${doc.pieces.length} pieces, ${cuts} cut paths, ${doc.widthMm}×${doc.heightMm}mm)`);
-      created++;
+      console.log(`${existingId != null ? "update" : "create"} "${ex.name}" → id ${d.id} (${doc.pieces.length} pieces, ${cuts} cut paths, ${doc.widthMm}×${doc.heightMm}mm)`);
+      if (existingId != null) updated++; else created++;
     } catch (e) { console.error(`POST FAIL "${ex.name}": ${e.message}`); failed++; }
   }
-  console.log(`\n${created} created, ${skipped} skipped, ${failed} failed.`);
+  console.log(`\n${created} created, ${updated} updated, ${skipped} skipped, ${failed} failed.`);
   process.exit(failed ? 1 : 0);
 }
-main();
+
+// Run only as the entry point — importing this module (verify-seed-bodice.mjs) must NOT POST.
+import { pathToFileURL } from "node:url";
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

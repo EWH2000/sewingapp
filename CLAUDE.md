@@ -277,3 +277,42 @@ gravity, front gains depth, no NaN); full suite green. **NEXT (M5c-step3): self-
 final settle passes) **+ settle tuning** (the drape freezes "warm" — slightly wavy). Then the **interactive
 editor authoring UI** (curve drag-handle / dart / notch / measurements on `/edit` — the data model + print
 lowering already exist, so it's additive). Starting orders for the fresh session: `HANDOFF-M5c-next.md`.
+
+**M5c-step3 / BODICE-GAP FIX + "doesn't-fit" stretch-to-fit + warning DONE (2026-06-22, owner-gated — "that
+fix worked, there are no more gaps").** The tank bodice drape showed gaps (the form peeking through), which was
+**three compounding bugs**, all measured host-side: (1) **the shoulder seam was never sewn** — it lies inside
+the pinned top-8% band, so both endpoints had `invm=0` and `projectDist` skipped it (frozen ~175 mm open); (2)
+**the shoulder seams were mis-paired in the seed** (`e3↔e3` straight, but the mirror-wrapped back needs them
+**crossed** `e3↔e5` like the sides); (3) **the bodice was child-sized** (front+back 520 mm around vs a 920 mm
+body). Now the bodice closes to **~7 mm** (Standard) — owner confirmed no gaps. The fixes, all GARMENT-only
+(bag inflate path byte-identical — `verify-cloth.mjs` 26/26; print spine/calibration gate untouched):
+- **`pattern-cloth.js` solver** (`SIM_VERSION 2→3`, invalidates cached drapes): the zero-g stitch-up now runs
+  **UNPINNED** so the top seam actually sews, then pins the stitched shoulder/waist line for the gravity phase
+  (`pinNow` zeroes pin velocity AND pushes any pin that drifted inside the body back out — an open neckline
+  would otherwise pin inside + clip forever; `opts.stitchUnpinned:false` rolls it back). A **bodice is pinned at
+  BOTH shoulder + waist** so it doesn't droop to the wider hip (which split the side seam) — EXCEPT under a
+  **dart mouth** (computed from the dart's edge geometry) so a waist dart still sews shut. A skirt stays
+  top-pinned (hangs). **Bounded stretch-to-fit**: a final reconciliation phase (`seam2=1e-9` beats stretch)
+  closes a seam by stretching the fabric, capped per-edge at +15% — so a too-small garment bridges instead of
+  gapping. Warm-start sectors now **meet at ±90°** (side seams start coincident). An additive **`strain` metric**
+  on the garment return (`{maxSeamGapMm, maxStretchRatio, overTension, wontClose, seams[], gapSegs[]}`) — fires
+  `overTension` when a seam genuinely can't close (gap > **50 mm**, the threshold that clears the hanging-seam
+  solver noise floor; a fitting bodice is ~7 mm, a fine skirt/dress side seam settles ~25–35 mm which is NOT a
+  fit problem). `gapSegs` (flat world segments) ride the cache so the highlight survives a reopen.
+- **`preview.js`**: persists/rehydrates `strain` through the settled-mesh cache; `fillDrapeSpec` shows a
+  **"Doesn't close — pattern too small here (gap N mm)"** warn row when `overTension`. **`preview3d.js`**:
+  `addStrainSeams` draws dashed red bridges on the draped mesh (modeled on `addGapSeams`), gated on
+  `overTension`, headless-safe. **`preview.html`**: `.pv-spec__warn` atelier amber/brass CSS.
+- **`tools/seed-examples.mjs`**: bodice re-scaled to a symmetric taper (waist 780 / bust 980 per the default
+  body, neck gap 132) + shoulders crossed (id 6 + dress id 7); dress skirt waist widened to 390 to meet the new
+  bodice waist; `SEED_OVERWRITE=1` updates id 5/6/7 in place (preserves ids; default run still idempotent-skip);
+  builders exported (entry-point-guarded POST) for the new test. Re-seeded id 5/6/7 (host-side, no rebuild).
+- Tests: `verify-garment-drape.mjs` rewritten (33 — shoulder+side close, strain quiet at fit + fires bounded
+  when oversized, no body penetration, dart excluded from strain, skirt fixture, rollback flag); new
+  `verify-seed-bodice.mjs` (18 — every inter-piece seam's edges match ≤2 mm, bodice fits, all examples still
+  lower to a schema-3 print doc). Full headless suite green (print spine sentinels included).
+**KNOWN LIMITATION (deferred to settle tuning, owner aware):** the **hanging skirt/dress side seam** doesn't
+fully close near the form's lower edge (~26 mm dress hip / ~34 mm skirt at Standard, more at Fine) — a soft-body
+limitation, NOT a fit problem, so it correctly does not warn. The bodice (pinned both ends) is the clean one.
+**Still next:** self-collision + settle tuning (would also tighten the hanging seams); the interactive editor
+authoring UI; revisiting the waist dart on a fitted body (the body now provides most of the bust shape).
