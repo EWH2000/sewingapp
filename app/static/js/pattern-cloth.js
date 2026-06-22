@@ -29,7 +29,7 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 1;
+  const SIM_VERSION = 2;   // 2: garment gravity drape + dart welds (invalidates pre-dart cached drapes)
 
   // ── tiny 3D vec / quaternion helpers (copied from pattern-fold.js; standalone) ──────
   const EPS = 1e-9;
@@ -218,7 +218,7 @@
 
     // seam constraints (zero rest length). Derive sew DIRECTION per seam from the warm-start
     // geometry (mirror pattern-fold.inferFlip), then pair nodes by arc-length via seamPairs.
-    const seamLinks = [], kI = [], kJ = [];
+    const seamLinks = [], kI = [], kJ = [], weldI = [], weldJ = [];   // welds: hard dart closures
     for (const s of seams) {
       if (s.a.piece === s.b.piece) continue;                          // self/dart seam — Step 3b
       const ma = meshes[s.a.piece], mb = meshes[s.b.piece];
@@ -230,6 +230,20 @@
         : deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
       const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
       for (const pr of pairs) { const gi = ma.start + pr[0], gj = mb.start + pr[1]; kI.push(gi); kJ.push(gj); seamLinks.push([gi, gj]); }
+    }
+    // DART self-seams (garments): sew each wedge dart's two legs shut WITHIN its piece, so the
+    // dart collapses + shapes the panel (a bust dart rounds the bodice front). The mesh already
+    // cut the wedge + tagged the legs (triangulatePiece via loweredBoundary). Bags have no darts.
+    if (garment && PM().selfSeamPairs) {
+      for (const pr of pieceRanges) {
+        const p = byId[pr.piece], m = meshes[pr.piece];
+        if (!p || !m || !(p.darts && p.darts.length)) continue;
+        for (const d of p.darts) {
+          if (d.kind !== "wedge") continue;
+          // WELD (not a spring): a sewn dart is permanently shut — a spring lets gravity reopen it.
+          for (const pp of PM().selfSeamPairs(m.mesh, d.id)) { const gi = m.start + pp[0], gj = m.start + pp[1]; weldI.push(gi); weldJ.push(gj); seamLinks.push([gi, gj]); }
+        }
+      }
     }
 
     // ── inverse mass (area-weighted lumped, from the flat rest shape) ──
@@ -307,6 +321,16 @@
       }
     }
 
+    // Hard dart weld: snap each paired leg node to the pair midpoint (distance=0, enforced every
+    // substep) so a sewn dart stays shut against gravity. Empty for bags → a true no-op.
+    function projectWelds() {
+      for (let w = 0; w < weldI.length; w++) {
+        const oi = 3 * weldI[w], oj = 3 * weldJ[w];
+        const mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
+        X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz;
+      }
+    }
+
     // One XPBD substep: integrate (inertia + pressure/gravity), project K iters, clamp, collide.
     function substep(iters, alphaSeam, P) {
       if (P > 0) accumulatePressure(P);
@@ -335,6 +359,7 @@
         const fin = Math.min(mv, vmax);
         if (fin > maxMove) maxMove = fin;
       }
+      if (weldI.length) projectWelds();
       if (collideOn) bodyProject();
       return maxMove;
     }

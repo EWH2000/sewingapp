@@ -93,6 +93,31 @@
     return { pts, meta };
   }
 
+  // Dart-aware resampler (M5c): resample the LOWERED outline (wedge darts cut out) the same way,
+  // but tag each boundary node either with its AUTHORED edge+t (so inter-piece seams still pair
+  // by arc-length) OR, for the two dart-leg sub-edges, with {dart,leg,t} (so selfSeamPairs can sew
+  // the legs shut, collapsing the wedge → 3D shaping). The no-dart path stays the plain resampler.
+  function resampleLowered(piece, lb, h) {
+    const authored = piece.nodes, nodes = lb.nodes, n = nodes.length;
+    const legTag = {};
+    for (const dl of lb.dartLegs) { legTag[dl.legA] = { dart: dl.dartId, leg: 0 }; legTag[dl.legB] = { dart: dl.dartId, leg: 1 }; }
+    const pts = [], meta = [];
+    for (let i = 0; i < n; i++) {
+      const a = [nodes[i].x, nodes[i].y], b = [nodes[(i + 1) % n].x, nodes[(i + 1) % n].y];
+      const L = dist2d(a, b), segs = Math.max(1, Math.round(L / h));
+      const tag = legTag[i], ae = lb.edgeMap[i];
+      let A0 = null, Lae = 1;
+      if (!tag && ae >= 0) { A0 = [authored[ae].x, authored[ae].y]; Lae = dist2d(A0, [authored[(ae + 1) % authored.length].x, authored[(ae + 1) % authored.length].y]) || 1; }
+      for (let s = 0; s < segs; s++) {
+        const t = s / segs, px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+        pts.push([px, py]);
+        if (tag) meta.push({ edge: -1, dart: tag.dart, leg: tag.leg, t });
+        else meta.push({ edge: ae, t: Math.min(1, dist2d([px, py], A0) / Lae) });
+      }
+    }
+    return { pts, meta };
+  }
+
   // Interior Steiner points on an h-grid, strictly inside with a margin so poly2tri doesn't
   // get points right on the contour (which makes slivers / can fail).
   function interiorGrid(nodes, h) {
@@ -128,8 +153,13 @@
     h = h > 0 ? h : 20;
     if (nodes0.length < 3) return { nodes: [], boundary: [], boundaryMeta: [], tris: [], dist: [], bend: [] };
 
-    const { pts: bPts, meta: bMeta } = resampleBoundary(nodes0, h);
-    const iPts = interiorGrid(nodes0, h);
+    // darted pieces triangulate the LOWERED outline (wedge cut out, legs tagged) so the dart can
+    // sew shut in 3D; everything else (no dart) takes the plain authored path → byte-identical.
+    const g = G();
+    const lb = (g && g.loweredBoundary && (piece.darts || []).some((d) => d.kind === "wedge")) ? g.loweredBoundary(piece) : null;
+    const poly = lb ? lb.nodes : nodes0;
+    const { pts: bPts, meta: bMeta } = lb ? resampleLowered(piece, lb, h) : resampleBoundary(nodes0, h);
+    const iPts = interiorGrid(poly, h);
 
     const nodes = [], boundary = [], boundaryMeta = [];
     bPts.forEach((p, k) => { boundary.push(nodes.length); boundaryMeta.push(bMeta[k]); nodes.push([p[0], p[1]]); });
@@ -218,7 +248,31 @@
     return pairs;
   }
 
+  // ── dart self-seam (M5c): pair the two leg sub-edges of one wedge dart WITHIN a mesh, so the
+  // drape sews them shut (the wedge collapses → the panel shapes to a cone). Legs run mouth→apex
+  // and apex→mouth, so sew A(t) ↔ B(1−t): the mouth points zip together, meeting at the apex.
+  function dartLegNodes(mesh, dartId, leg) {
+    const B = mesh.boundary, Meta = mesh.boundaryMeta, out = [];
+    for (let k = 0; k < B.length; k++) { const m = Meta[k]; if (m && m.dart === dartId && m.leg === leg) out.push({ node: B[k], t: m.t }); }
+    out.sort((a, b) => a.t - b.t);
+    return out;
+  }
+  function selfSeamPairs(mesh, dartId) {
+    const A = dartLegNodes(mesh, dartId, 0), B = dartLegNodes(mesh, dartId, 1);
+    if (!A.length || !B.length) return [];
+    const nearest = (list, target) => { let best = list[0], bd = Infinity; for (const it of list) { const d = Math.abs(it.t - target); if (d < bd) { bd = d; best = it; } } return best; };
+    const N = Math.max(A.length, B.length), pairs = [], seen = {};
+    for (let k = 0; k < N; k++) {
+      const f = N === 1 ? 0 : k / (N - 1);
+      const a = nearest(A, f), b = nearest(B, 1 - f);
+      if (a.node === b.node) continue;                  // the shared apex → no constraint
+      const key = a.node + "_" + b.node; if (seen[key]) continue; seen[key] = true;
+      pairs.push([a.node, b.node]);
+    }
+    return pairs;
+  }
+
   const round3 = (v) => Math.round(v * 1000) / 1000;
 
-  window.PatternMesh = { triangulatePiece, pointInPoly, resampleBoundary, interiorGrid, edgeNodes, seamPairs };
+  window.PatternMesh = { triangulatePiece, pointInPoly, resampleBoundary, interiorGrid, edgeNodes, seamPairs, selfSeamPairs };
 })();

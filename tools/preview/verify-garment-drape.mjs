@@ -77,6 +77,29 @@ const bag = [{ id: "p", name: "P", count: 1, nodes: [N(0, 0), N(200, 0), N(200, 
 const bagSeams = [];
 ok(Cl.geomHash(bag, bagSeams, { h: 20 }) === Cl.geomHash(bag, bagSeams, { h: 20 }), "bag hash deterministic + garment block skipped (byte-identical)");
 
+console.log("=== a wedge dart sews shut + shapes the bodice front ===");
+{
+  const darted = Object.assign(bodice("bf", "Bodice Front", "front"),
+    { darts: [{ id: "d_waist", edge: 0, center: 0.5, width: 26, depth: 120, kind: "wedge" }] });
+  // the dart mesh cuts the wedge + tags both legs; selfSeamPairs pairs them. Triangulate at the
+  // SAME h the drape uses (opts.h) so the pair node-indices line up with the solved mesh.
+  const dm = global.window.PatternMesh.triangulatePiece(global.window.PatternGeom.normalizePieces({ pieces: [darted] })[0], opts.h);
+  const leg0 = dm.boundaryMeta.filter((m) => m && m.dart === "d_waist" && m.leg === 0).length;
+  const leg1 = dm.boundaryMeta.filter((m) => m && m.dart === "d_waist" && m.leg === 1).length;
+  ok(leg0 > 0 && leg1 > 0, `dart legs tagged on the cut mesh (leg0=${leg0}, leg1=${leg1})`);
+  const dpairs = global.window.PatternMesh.selfSeamPairs(dm, "d_waist");
+  ok(dpairs.length > 0 && dpairs.every((p) => p[0] !== p[1]), `selfSeamPairs pairs the legs (${dpairs.length}, no self-pair)`);
+  // drape darted vs flat — the dart closes (welded) and adds front-back depth (shaping)
+  const rd = Cl.solveDrape([darted, back], seams, opts);
+  const rf = Cl.solveDrape([front, back], seams, opts);
+  const fr = rd.pieceRanges.find((p) => p.piece === "bf");
+  let gap = 0; for (const pp of dpairs) { const i = fr.start + pp[0], j = fr.start + pp[1]; gap += Math.hypot(rd.nodes[i][0] - rd.nodes[j][0], rd.nodes[i][1] - rd.nodes[j][1], rd.nodes[i][2] - rd.nodes[j][2]); }
+  ok(gap / dpairs.length < 8, `dart stays sewn shut under gravity (mean leg gap ${(gap / dpairs.length).toFixed(1)}mm — welded, not a spring)`);
+  const depth = (r) => { const rr = r.pieceRanges.find((p) => p.piece === "bf"); let mn = 1e9, mx = -1e9; for (let i = rr.start; i < rr.start + rr.count; i++) { const z = r.nodes[i][2]; if (z < mn) mn = z; if (z > mx) mx = z; } return mx - mn; };
+  ok(depth(rd) > depth(rf) + 30, `the dart shapes the front (z-depth ${depth(rd).toFixed(0)}mm darted > ${depth(rf).toFixed(0)}mm flat)`);
+  ok(finite(rd.nodes), "darted drape has no NaN");
+}
+
 console.log("=== degrade-never-blank (garment, no seams → loose panels still drape) ===");
 const rNoSeam = Cl.solveDrape([front, back], [], opts);
 ok(rNoSeam.nodes.length > 0 && finite(rNoSeam.nodes), "a seamless garment still returns a finite mesh (no blank)");

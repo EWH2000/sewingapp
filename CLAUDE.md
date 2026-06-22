@@ -263,3 +263,17 @@ Preview: garments route to the garment drape, a **Fabric** control (`#pv-fabric`
 support. Tests: `tools/preview/verify-garment-drape.mjs` (15) + body-form repositioned (34); full suite green.
 **NEXT (M5c-step2): the bust dart shapes the bodice** (triangulatePiece cuts the wedge + selfSeamPairs sews
 the legs), then self-collision + settle tuning.
+
+**M5c-step2 / DART SHAPING DONE (2026-06-22, owner-gated — "coming along great").** A wedge dart now
+**shapes the bodice in 3D**: `triangulatePiece` routes a darted piece through `G.loweredBoundary` (cuts the
+wedge from the sim mesh, tags the two legs in `boundaryMeta` `{dart,leg,t}`) — the no-dart path is
+byte-identical, so bags/plain panels are untouched. `pattern-mesh.selfSeamPairs(mesh,dartId)` pairs the legs
+(mouth→apex, A(t)↔B(1−t)); the garment `solveDrape` **WELDS** the pairs (`projectWelds`: snap each pair to its
+midpoint every substep) — a spring let gravity reopen the dart (40→10mm in stitch-up, then back to 49mm under
+gravity), the weld holds it shut (**2.1mm** under full gravity) and the darted front gains ~80mm front-back
+depth vs flat (it shapes to the bust). `SIM_VERSION 1→2` invalidates pre-dart cached drapes (bags re-solve
+once, byte-identical). Tests: `verify-garment-drape.mjs` 15→20 (dart legs tagged, paired, sewn shut under
+gravity, front gains depth, no NaN); full suite green. **NEXT (M5c-step3): self-collision** (cloth-on-cloth,
+final settle passes) **+ settle tuning** (the drape freezes "warm" — slightly wavy). Then the **interactive
+editor authoring UI** (curve drag-handle / dart / notch / measurements on `/edit` — the data model + print
+lowering already exist, so it's additive). Starting orders for the fresh session: `HANDOFF-M5c-next.md`.
