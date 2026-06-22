@@ -29,7 +29,8 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 3;   // 3: garment unpinned stitch-up + bounded stretch-to-fit + strain metric
+  const SIM_VERSION = 4;   // 4: cloth self-collision (final-settle node repulsion) + garment seam-closeup (free-hem zip)
+                           // 3: garment unpinned stitch-up + bounded stretch-to-fit + strain metric
                            // 2: garment gravity drape + dart welds (invalidates pre-dart cached drapes)
 
   // ── tiny 3D vec / quaternion helpers (copied from pattern-fold.js; standalone) ──────
@@ -286,6 +287,25 @@
     const dt = 1 / 60, dt2 = dt * dt;
     const vmax = 0.5 * h;
 
+    // ── self-collision setup (M5c-step3): a node-node repulsion floor so the draped cloth can't pass
+    // through ITSELF (the lower-bodice crumple). Build a once-only exclusion Set of the node pairs that
+    // are legitimately joined — triangle edges, stretch/bend springs, inter-piece seams, dart welds —
+    // which must NEVER repel (else a closed seam or a sewn dart would be forced back open). Key = i*N+j
+    // (i<j); N ≤ 65535 (Uint16 cap) → < 2^32, exact in a double. An index-distance heuristic is wrong
+    // here: X[] concatenates multiple pieces, so adjacency does not correlate with |i−j|.
+    const clothThick = opts.clothThick != null ? opts.clothThick : 0.5 * h;   // separation floor (10mm @ Std)
+    const selfWindow = opts.selfWindow != null ? opts.selfWindow : 30;        // run in the final N settle substeps
+    const doSelfCollide = garment && (opts.selfCollide !== false);            // garment-only; default ON
+    const selfExclude = new Set();
+    if (doSelfCollide) {
+      const addExcl = (a, b) => { const i = a < b ? a : b, j = a < b ? b : a; if (i !== j) selfExclude.add(i * N + j); };
+      for (const t of tris) { addExcl(t[0], t[1]); addExcl(t[1], t[2]); addExcl(t[2], t[0]); }
+      for (let k = 0; k < nS; k++) addExcl(sI[k], sJ[k]);
+      for (let k = 0; k < nB; k++) addExcl(bI[k], bJ[k]);
+      for (let k = 0; k < nK; k++) addExcl(kI[k], kJ[k]);
+      for (let k = 0; k < weldI.length; k++) addExcl(weldI[k], weldJ[k]);
+    }
+
     // XPBD distance projection over a flat constraint list (rest may be a Float64Array or 0).
     function projectDist(I, n, J, R, lam, alpha) {
       const at = alpha / dt2;
@@ -329,6 +349,7 @@
     // Garment forces (no-ops for the bag path — set by the garment driver below).
     let gAccel = 0;          // per-substep downward displacement (mm); = G·dt² eased in
     let collideOn = false;   // body collision against the dress form
+    let selfCollideNow = false;   // cloth self-collision (armed only in the final settle window + reconcile)
     // One-sided analytic body collision: any node inside the form → project to the surface +
     // skin, and zero its velocity there (pseudo-friction, so the garment grips, not slides off).
     function bodyProject() {
@@ -355,6 +376,57 @@
         const oi = 3 * weldI[w], oj = 3 * weldJ[w];
         const mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
         X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz;
+      }
+    }
+
+    // Cloth SELF-collision (M5c-step3): push apart non-adjacent node pairs that have come within
+    // clothThick of each other (a fold passing through its own layers). Uniform spatial hash at cell=h
+    // (≥ clothThick so the 27-neighbourhood captures every colliding pair), rebuilt each call.
+    // DETERMINISTIC: buckets are FILLED by ascending node index (so each bucket array is index-sorted),
+    // and SWEPT outer-i ascending / inner j>i — every unordered pair is visited once in a fixed order;
+    // we look buckets up by computed integer key and never iterate the map's own key order. Hard
+    // inverse-mass-split push to the thickness (mirrors bodyProject); edits only X, never Pp (injects no
+    // velocity). Pinned nodes (invm=0) are immovable → the whole push goes to the free partner.
+    function projectSelfCollision() {
+      if (!N) return;
+      const cell = h, OFF = 1024, B = 2048;
+      const buckets = Object.create(null);
+      for (let i = 0; i < N; i++) {
+        const o = 3 * i;
+        const key = (Math.floor(X[o] / cell) + OFF) + (Math.floor(X[o + 1] / cell) + OFF) * B + (Math.floor(X[o + 2] / cell) + OFF) * B * B;
+        (buckets[key] || (buckets[key] = [])).push(i);
+      }
+      const t2 = clothThick;
+      for (let i = 0; i < N; i++) {
+        const wi = invm[i], o = 3 * i;
+        const cx = Math.floor(X[o] / cell) + OFF, cy = Math.floor(X[o + 1] / cell) + OFF, cz = Math.floor(X[o + 2] / cell) + OFF;
+        for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) for (let az = -1; az <= 1; az++) {
+          const b = buckets[(cx + ax) + (cy + ay) * B + (cz + az) * B * B]; if (!b) continue;
+          for (let bi = 0; bi < b.length; bi++) {
+            const j = b[bi]; if (j <= i) continue;
+            if (selfExclude.has(i * N + j)) continue;
+            const wj = invm[j], w = wi + wj; if (w === 0) continue;
+            const oj = 3 * j;
+            let dx = X[o] - X[oj], dy = X[o + 1] - X[oj + 1], dz = X[o + 2] - X[oj + 2];
+            const l = Math.hypot(dx, dy, dz); if (l >= t2 || l < EPS) continue;
+            const nx = dx / l, ny = dy / l, nz = dz / l, ci = wi / w, cj = wj / w;
+            // approaching relative Verlet velocity along the contact normal (v = X − Pp), measured before
+            // the positional push so it reflects true momentum, not the correction we are about to apply.
+            const vrel = (X[o] - Pp[o] - (X[oj] - Pp[oj])) * nx + (X[o + 1] - Pp[o + 1] - (X[oj + 1] - Pp[oj + 1])) * ny + (X[o + 2] - Pp[o + 2] - (X[oj + 2] - Pp[oj + 2])) * nz;
+            // (1) separate positionally to the thickness floor, split by inverse mass (mirrors projectDist).
+            const corr = t2 - l;
+            X[o] += ci * corr * nx; X[o + 1] += ci * corr * ny; X[o + 2] += ci * corr * nz;
+            X[oj] -= cj * corr * nx; X[oj + 1] -= cj * corr * ny; X[oj + 2] -= cj * corr * nz;
+            // (2) inelastic contact: if the layers are still approaching, remove that closing component via
+            // Pp (no added restitution) so the separation STICKS — neither bounces apart (a hard X-only push
+            // injects ≈vmax of outward Verlet velocity → a visible pop) nor re-rams (velocity-neutral keeps
+            // the closing momentum). Pinned partners (ci or cj = 0) take none of it.
+            if (vrel < 0) {
+              Pp[o] += ci * vrel * nx; Pp[o + 1] += ci * vrel * ny; Pp[o + 2] += ci * vrel * nz;
+              Pp[oj] -= cj * vrel * nx; Pp[oj + 1] -= cj * vrel * ny; Pp[oj + 2] -= cj * vrel * nz;
+            }
+          }
+        }
       }
     }
 
@@ -388,6 +460,7 @@
       }
       if (weldI.length) projectWelds();
       if (collideOn) bodyProject();
+      if (selfCollideNow) projectSelfCollision();
       return maxMove;
     }
 
@@ -445,10 +518,47 @@
       const gSettleTol = 0.015 * h;
       const gFull = -G_MM * dt2 * (opts.gravity != null ? opts.gravity : 1);   // downward, mm/substep
       const stitchUnpinned = opts.stitchUnpinned !== false;                    // close the top seam BEFORE pinning (rollback: false)
-      const seam2 = (opts.compliance && opts.compliance.seam2) || 1e-9;        // reconciliation: seam beats stretch (stiffer than C.stretch)
       const maxStretchFrac = opts.maxStretchFrac != null ? opts.maxStretchFrac : 0.15;  // per-edge stretch ceiling (woven tears ~15%)
       const reconcileSteps = opts.reconcileSteps != null ? opts.reconcileSteps : 16;
+      // seam-closeup (M5c-step3, BUG 2): zip a free-hanging side seam shut. A skirt's hem hangs BELOW the
+      // form in free space where no body molds it + full gravity splays the two edges apart; harden the
+      // inter-piece seam soft→near-weld while gravity is WEAK, hold it stiff, then re-settle under full
+      // gravity. Inert on an already-closed (bodice / body-molded) seam.
+      const closeSteps = opts.closeSteps != null ? opts.closeSteps : 12;
+      const closeGrav = opts.closeGrav != null ? opts.closeGrav : 0.15;                  // gravity fraction during closure (not 0: keep the hang)
+      const closeSeam0 = (opts.compliance && opts.compliance.closeSeam0) || C.seam1;     // start at the settle stiffness
+      const closeSeam1 = (opts.compliance && opts.compliance.closeSeam1) || 1e-11;       // near-weld: zip the free seam shut + hold it
+      const closeReSettle = opts.closeReSettle != null ? opts.closeReSettle : 24;
+      const closeReGrav = opts.closeReGrav != null ? opts.closeReGrav : 0.2;             // re-settle gravity (low: the bulk drape is set; this just relaxes over-stretch + holds closure)
+      const reSettleClamp = !!opts.reSettleClamp;                                        // clamp during re-settle (default OFF: it fights the seam closure on a free hem)
+      // final surface smoothing: iron the high-frequency JAGGED folds (the compressed waist band, where
+      // the pinned/welded/seamed edges meet draping fabric) with shape-preserving Taubin λ|μ passes —
+      // μ<0 counters λ's shrink, so the garment doesn't deflate. Free nodes only; seams re-snap + body
+      // re-projects after, so it can't open a seam or sink the cloth into the form.
+      const smoothSteps = opts.smoothSteps != null ? opts.smoothSteps : 6;
+      const smoothLambda = opts.smoothLambda != null ? opts.smoothLambda : 0.6;
+      const smoothMu = opts.smoothMu != null ? opts.smoothMu : -0.63;
+      const smoothSnapMm = opts.smoothSnapMm != null ? opts.smoothSnapMm : 20;           // only bridge/snap ALREADY-close seam pairs (an oversized misfit gap stays open + warned)
+      const smoothPins = opts.smoothPins !== false;                                       // also smooth the pinned line: the jagged frozen WAIST is itself pinned (pinNow freezes it mid-stitch); shoulders shift only ~5mm
       const savedInvm = pins.map((i) => invm[i]);
+      // Hard per-edge stretch ceiling: cap each structural edge at (1+maxStretchFrac)·rest. The XPBD
+      // stretch spring alone creeps under sustained gravity (Gauss–Seidel, few iters/substep), so this
+      // bounds elongation — applied in BOTH reconcile and the full-gravity re-settle (else the near-weld
+      // seam holds while the fabric stretches downward, dropping the hem to the floor).
+      const clampStretch = () => {
+        for (let c = 0; c < nS; c++) {
+          const rest = sR[c]; if (!(rest > 1e-6)) continue;
+          const oi = 3 * sI[c], oj = 3 * sJ[c];
+          const dx = X[oi] - X[oj], dy = X[oi + 1] - X[oj + 1], dz = X[oi + 2] - X[oj + 2];
+          const d = Math.hypot(dx, dy, dz), lim = rest * (1 + maxStretchFrac);
+          if (d > lim && d > EPS) {
+            const wi = invm[sI[c]], wj = invm[sJ[c]], w = wi + wj; if (w === 0) continue;
+            const corr = (d - lim) / d;
+            X[oi] -= (wi / w) * corr * dx; X[oi + 1] -= (wi / w) * corr * dy; X[oi + 2] -= (wi / w) * corr * dz;
+            X[oj] += (wj / w) * corr * dx; X[oj + 1] += (wj / w) * corr * dy; X[oj + 2] += (wj / w) * corr * dz;
+          }
+        }
+      };
       // Pin shoulders/waist IN PLACE with zero velocity (the Verlet inertia term applies regardless of
       // invm, so Pp must be snapped to X or a freshly-pinned node keeps drifting). First push any pin
       // that drifted INSIDE the body during the collision-free stitch-up back out to the surface — a
@@ -473,30 +583,66 @@
       if (stitchUnpinned) pinNow();                        // NOW pin the stitched shoulder/waist line (hangs from its support)
       let genergy = 0, gconv = false;                      // Phase 2: ease gravity in + settle on the form
       const gRamp = Math.min(40, Math.max(1, Math.round(maxSettle * 0.15)));
+      const selfStart = Math.max(0, maxSettle - selfWindow);   // self-collision only in the final window (cheap)
       for (let k = 0; k < maxSettle; k++) {
+        selfCollideNow = doSelfCollide && k >= selfStart;
         gAccel = gFull * smoothstep(Math.min(1, k / gRamp));
         genergy = substep(settleIters, C.seam1, 0);
         if (k > gRamp && genergy < gSettleTol) { gconv = true; break; }
       }
-      // Phase 3: bounded stretch-to-fit reconciliation. Seams (seam2, stiffer than stretch) win where a
-      // gap remains; a per-edge stretch ceiling caps each structural edge at (1+maxStretchFrac)·rest, so a
-      // too-small garment STRETCHES to bridge (up to the limit, then the residual stays as a flagged gap)
-      // rather than gapping silently — and can't explode. Inert on a fitting garment (closed seams → Cv≈0).
-      gAccel = gFull;
-      for (let k = 0; k < reconcileSteps; k++) {
-        substep(settleIters, seam2, 0);
-        for (let c = 0; c < nS; c++) {
-          const rest = sR[c]; if (!(rest > 1e-6)) continue;
-          const oi = 3 * sI[c], oj = 3 * sJ[c];
-          const dx = X[oi] - X[oj], dy = X[oi + 1] - X[oj + 1], dz = X[oi + 2] - X[oj + 2];
-          const d = Math.hypot(dx, dy, dz), lim = rest * (1 + maxStretchFrac);
-          if (d > lim && d > EPS) {
-            const wi = invm[sI[c]], wj = invm[sJ[c]], w = wi + wj; if (w === 0) continue;
-            const corr = (d - lim) / d;
-            X[oi] -= (wi / w) * corr * dx; X[oi + 1] -= (wi / w) * corr * dy; X[oi + 2] -= (wi / w) * corr * dz;
-            X[oj] += (wj / w) * corr * dx; X[oj + 1] += (wj / w) * corr * dy; X[oj + 2] += (wj / w) * corr * dz;
+      // seam-closeup: zip the free-hanging side seam shut — harden the seam soft→near-weld while gravity
+      // is WEAK so it can't splay the hem apart; self-collision on so a fold can't re-cross.
+      selfCollideNow = doSelfCollide;
+      for (let k = 0; k < closeSteps; k++) {
+        const s = closeSteps > 1 ? k / (closeSteps - 1) : 1;
+        gAccel = gFull * closeGrav;
+        substep(settleIters, Math.exp(lerp(Math.log(closeSeam0), Math.log(closeSeam1), smoothstep(s))), 0);
+      }
+      // Phase 3: bounded stretch-to-fit reconciliation under the SAME reduced gravity (so closure wins
+      // over gravity tearing the free hem apart). Seam held near-weld; a per-edge stretch ceiling caps each
+      // structural edge at (1+maxStretchFrac)·rest, so a too-small garment STRETCHES to bridge (up to the
+      // limit, residual stays a flagged gap) not gap silently — and can't explode. Inert on a fitting one.
+      gAccel = gFull * closeGrav;
+      for (let k = 0; k < reconcileSteps; k++) { substep(settleIters, closeSeam1, 0); clampStretch(); }
+      // re-settle under FULL gravity so the now-closed garment hangs naturally; seam held stiff so the
+      // closure HOLDS (a soft seam here would let full gravity re-open the free hem — the original bug),
+      // stretch clamped so the fabric can't elongate to the floor, self-collision on so it stays
+      // penetration-free. Re-measures convergence for the mode.
+      gAccel = gFull * closeReGrav;
+      for (let k = 0; k < closeReSettle; k++) { genergy = substep(settleIters, closeSeam1, 0); if (reSettleClamp) clampStretch(); }
+      selfCollideNow = false;
+      // "settled" verdict from the BULK's motion (p90 of per-node last-substep move), not the worst node:
+      // a self-collision contact can keep ONE node railing at vmax indefinitely (a stable jitter, not an
+      // unsettled garment), so maxMove alone would never read "settled". p90 reflects the visible surface.
+      const nmv = [];
+      for (let i = 0; i < N; i++) { if (invm[i] === 0) continue; const o = 3 * i; nmv.push(Math.hypot(X[o] - Pp[o], X[o + 1] - Pp[o + 1], X[o + 2] - Pp[o + 2])); }
+      nmv.sort((a, b) => a - b);
+      genergy = nmv.length ? nmv[Math.floor(nmv.length * 0.9)] : genergy;
+      if (genergy < gSettleTol) gconv = true;
+      // Taubin surface smoothing (de-jag). Adjacency = triangle edges + the ALREADY-CLOSE seam/weld pairs,
+      // so smoothing is consistent ACROSS a sewn seam and can't pull it open; FAR pairs (an oversized
+      // misfit gap) are neither bridged nor snapped, so the genuine gap + its overTension warning survive.
+      if (smoothSteps > 0) {
+        const adj = Array.from({ length: N }, () => new Set());
+        for (const t of tris) { adj[t[0]].add(t[1]); adj[t[0]].add(t[2]); adj[t[1]].add(t[0]); adj[t[1]].add(t[2]); adj[t[2]].add(t[0]); adj[t[2]].add(t[1]); }
+        const near = (a, b) => Math.hypot(X[3 * a] - X[3 * b], X[3 * a + 1] - X[3 * b + 1], X[3 * a + 2] - X[3 * b + 2]) < smoothSnapMm;
+        const snap = [];
+        for (let k = 0; k < nK; k++) if (near(kI[k], kJ[k])) { adj[kI[k]].add(kJ[k]); adj[kJ[k]].add(kI[k]); snap.push(kI[k], kJ[k]); }
+        for (let k = 0; k < weldI.length; k++) if (near(weldI[k], weldJ[k])) { adj[weldI[k]].add(weldJ[k]); adj[weldJ[k]].add(weldI[k]); snap.push(weldI[k], weldJ[k]); }
+        const A = adj.map((s) => Array.from(s));
+        const tmp = new Float64Array(3 * N);
+        const lap = (w) => {
+          for (let i = 0; i < N; i++) {
+            const o = 3 * i;
+            if ((invm[i] === 0 && !smoothPins) || !A[i].length) { tmp[o] = X[o]; tmp[o + 1] = X[o + 1]; tmp[o + 2] = X[o + 2]; continue; }  // pins stay put unless smoothPins
+            let cx = 0, cy = 0, cz = 0; for (const j of A[i]) { cx += X[3 * j]; cy += X[3 * j + 1]; cz += X[3 * j + 2]; }
+            const m = A[i].length; tmp[o] = X[o] + w * (cx / m - X[o]); tmp[o + 1] = X[o + 1] + w * (cy / m - X[o + 1]); tmp[o + 2] = X[o + 2] + w * (cz / m - X[o + 2]);
           }
-        }
+          X.set(tmp);
+        };
+        for (let p = 0; p < smoothSteps; p++) { lap(smoothLambda); lap(smoothMu); }
+        for (let s = 0; s < snap.length; s += 2) { const oi = 3 * snap[s], oj = 3 * snap[s + 1]; const mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2; X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; }
+        if (collideOn) bodyProject();
       }
       const strain = computeStrain();
       for (let j = 0; j < pins.length; j++) invm[pins[j]] = savedInvm[j];
@@ -595,6 +741,8 @@
     if (opts.garment || opts.body) {
       const b = opts.body || {};
       parts.push("g=1", "fab=" + (opts.fabric || "cotton"), "body=" + [b.heightMm, b.bustMm, b.waistMm, b.hipMm].join(","));
+      // self-collision knobs (garment-only → bag hash byte-identical): toggling/retuning re-keys the cache.
+      parts.push("sc=" + (opts.selfCollide === false ? 0 : 1), "thick=" + (opts.clothThick != null ? opts.clothThick : 0.5 * (opts.h > 0 ? opts.h : DEFAULTS.h)), "scw=" + (opts.selfWindow != null ? opts.selfWindow : 30), "sm=" + (opts.smoothSteps != null ? opts.smoothSteps : 6));
       for (const p of pieces || []) {
         for (const d of (p.darts || [])) parts.push("d", d.edge, q(d.center), q(d.width), q(d.depth), d.kind);
         for (const k in (p.edges || {})) parts.push("e", k, JSON.stringify(p.edges[k].curve));

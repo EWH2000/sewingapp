@@ -316,3 +316,36 @@ fully close near the form's lower edge (~26 mm dress hip / ~34 mm skirt at Stand
 limitation, NOT a fit problem, so it correctly does not warn. The bodice (pinned both ends) is the clean one.
 **Still next:** self-collision + settle tuning (would also tighten the hanging seams); the interactive editor
 authoring UI; revisiting the waist dart on a fitted body (the body now provides most of the bust shape).
+
+**M5c-step4 / SELF-COLLISION + SKIRT-SEAM CLOSEUP + WAIST DE-JAG DONE (2026-06-22, owner-gated — "looks much
+better, commit it").** Three garment-only additions in `pattern-cloth.js` (bag inflate path BYTE-IDENTICAL —
+`verify-cloth.mjs` 26/0; explicit tote byte-diff = 0; print spine/calibration gate untouched), `SIM_VERSION 3→4`:
+- **Cloth self-collision** (`projectSelfCollision`) — fixes the lower bodice CRUMPLING THROUGH ITSELF (no
+  cloth-cloth collision existed before; measured 101 interpenetrating node pairs). A DETERMINISTIC uniform spatial
+  hash (cell=h; integer key `(cx+OFF)+(cy+OFF)*B+(cz+OFF)*B*B`, OFF=1024/B=2048; buckets filled + swept by
+  ascending node index — never Map/`for..in` order), a build-once exclusion `Set` of legitimately-joined pairs
+  (triangle edges + stretch/bend/seam/dart-weld, key `i*N+j`, i<j), **inelastic contact** (positional split-by-invm
+  push to `clothThick=0.5·h`, then remove the *approaching* relative normal velocity via `Pp` — separates without a
+  pop and without re-ramming; a hard X-only push injects ≈vmax of outward Verlet velocity → jitter). Armed ONLY in
+  the final `selfWindow=30` settle substeps + reconcile (cheap), `opts.selfCollide`-gated (default ON garments).
+  Bodice interpenetrating pairs **101→8**, minNonAdj 0.64→4 mm.
+- **Seam-closeup** (the free-hanging skirt/dress SIDE SEAM, prior known limitation) — the hem hangs BELOW the form
+  in free space where no body molds it + full gravity splays the two edges, so the soft seam springs left ~34 mm.
+  After settle: a closeup loop hardens the inter-piece seam soft→near-weld (`closeSeam1=1e-11`) under reduced
+  gravity (`closeGrav=0.15`); reconcile runs at reduced gravity WITH the stretch clamp; then a low-gravity
+  re-settle (`closeReGrav=0.2`, no clamp) holds the closure while the bulk drape (set at full gravity) relaxes the
+  over-stretch. **Skirt side seam 34→1 mm, dress 26→11 mm**; p95 stretch dropped 1.68→1.21 as a bonus. Inert on an
+  already-closed (body-molded) bodice seam.
+- **Taubin λ\|μ surface smoothing** (`smoothSteps=6`, λ0.6/μ-0.63) — the owner's "jagged at the bottom" was sharp
+  folds in a tight ring at the WAIST (the pinned+welded+skirt-seamed edges converge there + the fabric compresses;
+  ~11 mm surface roughness vs ~2 mm elsewhere). Shape-preserving λ\|μ passes (μ<0 counters λ-shrink) iron it to
+  ~2.7 mm. Adjacency BRIDGES the already-close seam/weld pairs (so it can't pull a closed seam open) + re-snaps
+  them + body-reprojects; FAR pairs (oversized misfit) are left untouched so `overTension` still fires. Smooths
+  the pinned waist line too (`smoothPins` — `pinNow` froze it jagged); shoulders shift only ~5 mm.
+- The `mode` settled/warm verdict now uses the **p90** of per-node motion, not the worst node (one self-collision
+  contact rails at `vmax` forever). A residual ~3-4 mm bulk jitter remains ("warm") — inherent solver under-
+  resolution at this mesh density, owner-accepted (the visible defects are fixed). Tests: `verify-garment-drape.mjs`
+  33→**46** (self-collision separates/deterministic/gated; smoothing lowers roughness + keeps seams closed +
+  preserves the warning; geomHash re-keys on sc/thick/scw/sm, bag hash byte-identical). Full headless + print-spine
+  suites green. **Still next:** the interactive editor authoring UI (curve/dart/notch/measurements on `/edit`);
+  revisiting the waist dart on a fitted body.

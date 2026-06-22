@@ -159,5 +159,71 @@ console.log("=== degrade-never-blank (garment, no seams → loose panels still d
 const rNoSeam = Cl.solveDrape([front, back], [], opts);
 ok(rNoSeam.nodes.length > 0 && finite(rNoSeam.nodes), "a seamless garment still returns a finite mesh (no blank)");
 
+console.log("=== cloth self-collision separates non-adjacent layers (BUG 1), deterministic + gated ===");
+{
+  // min distance between NON-adjacent node pairs — a proxy for cloth-cloth interpenetration (the lower-
+  // bodice crumple). Adjacency from the exposed tris (3 edges each) + seamLinks; spatial-hashed → O(N).
+  const sepOf = (r) => {
+    const adj = new Set(), Nn = r.nodes.length, ae = (a, b) => { const i = a < b ? a : b, j = a < b ? b : a; if (i !== j) adj.add(i * Nn + j); };
+    for (const t of r.tris) { ae(t[0], t[1]); ae(t[1], t[2]); ae(t[2], t[0]); }
+    for (const [i, j] of r.seamLinks || []) ae(i, j);
+    const cell = 12, OFF = 1024, B = 2048, bk = Object.create(null);
+    for (let i = 0; i < Nn; i++) { const p = r.nodes[i]; const k = (Math.floor(p[0] / cell) + OFF) + (Math.floor(p[1] / cell) + OFF) * B + (Math.floor(p[2] / cell) + OFF) * B * B; (bk[k] || (bk[k] = [])).push(i); }
+    let mn = Infinity;
+    for (let i = 0; i < Nn; i++) {
+      const p = r.nodes[i], cx = Math.floor(p[0] / cell) + OFF, cy = Math.floor(p[1] / cell) + OFF, cz = Math.floor(p[2] / cell) + OFF;
+      for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) for (let az = -1; az <= 1; az++) {
+        const b = bk[(cx + ax) + (cy + ay) * B + (cz + az) * B * B]; if (!b) continue;
+        for (const j of b) { if (j <= i || adj.has(i * Nn + j)) continue; const q = r.nodes[j]; const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); if (d < mn) mn = d; }
+      }
+    }
+    return mn;
+  };
+  const rOn = Cl.solveDrape([front, back], seams, opts);                                       // selfCollide defaults ON for garments
+  const rOff = Cl.solveDrape([front, back], seams, Object.assign({}, opts, { selfCollide: false }));
+  ok(sepOf(rOn) > sepOf(rOff), `self-collision separates layers (min non-adjacent gap ${sepOf(rOn).toFixed(2)}mm ON vs ${sepOf(rOff).toFixed(2)}mm OFF)`);
+  ok(finite(rOn.nodes), "self-collision drape has no NaN/Inf");
+  const rOn2 = Cl.solveDrape([front, back], seams, opts);
+  let md = 0; for (let i = 0; i < rOn.nodes.length; i++) for (let d = 0; d < 3; d++) md = Math.max(md, Math.abs(rOn.nodes[i][d] - rOn2.nodes[i][d]));
+  ok(md < 1e-9, `self-collision is deterministic (max Δ ${md.toExponential(1)})`);
+  let mr = 0; for (let i = 0; i < rOff.nodes.length; i++) for (let d = 0; d < 3; d++) mr = Math.max(mr, Math.abs(rOff.nodes[i][d] - rOn.nodes[i][d]));
+  ok(mr > 1e-6, `selfCollide:false changes the result (max Δ ${mr.toFixed(1)}mm) — the gate cleanly disables it (rollback)`);
+}
+
+console.log("=== self-collision re-keys geomHash; a BAG's hash stays byte-identical ===");
+{
+  const hOn = Cl.geomHash([front, back], seams, { h: 20, garment: true, body, selfCollide: true });
+  const hOff = Cl.geomHash([front, back], seams, { h: 20, garment: true, body, selfCollide: false });
+  const hThick = Cl.geomHash([front, back], seams, { h: 20, garment: true, body, clothThick: 6 });
+  ok(hOn !== hOff, "toggling selfCollide re-keys the garment hash");
+  ok(hOn !== hThick, "changing clothThick re-keys the garment hash");
+  ok(hOn !== Cl.geomHash([front, back], seams, { h: 20, garment: true, body, smoothSteps: 2 }), "changing smoothSteps re-keys the garment hash");
+  const bag2 = [{ id: "p", name: "P", count: 1, nodes: [N(0, 0), N(200, 0), N(200, 200), N(0, 200)] }];
+  ok(Cl.geomHash(bag2, [], { h: 20 }) === Cl.geomHash(bag2, [], { h: 20, selfCollide: false }), "a bag's hash ignores garment-only self-collision opts (byte-identical)");
+}
+
+console.log("=== surface smoothing (de-jag) lowers roughness, keeps seams closed, preserves the warning ===");
+{
+  // mean per-node Laplacian — the surface's high-frequency roughness (the jagged waist band).
+  const roughness = (r) => {
+    const nb = Array.from({ length: r.nodes.length }, () => new Set());
+    for (const t of r.tris) { nb[t[0]].add(t[1]); nb[t[0]].add(t[2]); nb[t[1]].add(t[0]); nb[t[1]].add(t[2]); nb[t[2]].add(t[0]); nb[t[2]].add(t[1]); }
+    let s = 0, c = 0;
+    for (let i = 0; i < r.nodes.length; i++) { const a = nb[i]; if (!a.size) continue; let cx = 0, cy = 0, cz = 0; for (const j of a) { cx += r.nodes[j][0]; cy += r.nodes[j][1]; cz += r.nodes[j][2]; } cx /= a.size; cy /= a.size; cz /= a.size; s += Math.hypot(r.nodes[i][0] - cx, r.nodes[i][1] - cy, r.nodes[i][2] - cz); c++; }
+    return c ? s / c : 0;
+  };
+  const smooth = Cl.solveDrape([front, back], seams, opts);                                  // smoothing default ON
+  const jagged = Cl.solveDrape([front, back], seams, Object.assign({}, opts, { smoothSteps: 0 }));
+  ok(roughness(smooth) < roughness(jagged), `smoothing lowers mean surface roughness (${roughness(smooth).toFixed(2)}mm vs ${roughness(jagged).toFixed(2)}mm unsmoothed)`);
+  ok(seamResiduals(smooth).shoulder < 15 && seamResiduals(smooth).side < 15, "seams stay CLOSED after smoothing (bridged across the seam + re-snapped)");
+  ok(finite(smooth.nodes), "smoothed drape has no NaN/Inf");
+  let md = 0; const s2 = Cl.solveDrape([front, back], seams, opts);
+  for (let i = 0; i < smooth.nodes.length; i++) for (let d = 0; d < 3; d++) md = Math.max(md, Math.abs(smooth.nodes[i][d] - s2.nodes[i][d]));
+  ok(md < 1e-9, `smoothing is deterministic (max Δ ${md.toExponential(1)})`);
+  // smoothing must NOT hide a genuine misfit: an oversized body still gaps + warns (far seam pairs aren't bridged/snapped)
+  const rBig2 = Cl.solveDrape([front, back], seams, Object.assign({}, opts, { body: Object.assign({}, body, { bustMm: 1400, waistMm: 1200 }) }));
+  ok(rBig2.strain.overTension === true, "an oversized body still warns despite smoothing (far seam pairs are not snapped)");
+}
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -940,12 +940,25 @@ focused sessions; estimates, not commitments — 3b especially.)
   "no more gaps")**. The bodice closes cleanly: stitch-up runs **unpinned** so the top seam sews
   (it sat in the pinned band, frozen ~175 mm), then pins shoulder+waist (except a dart mouth) so it
   doesn't droop to the hip; the seed bodice was re-scaled to fit + its shoulders crossed. See
-  CLAUDE.md for the full per-step status. **Still open (rolls into the gate above):**
-  spatial-hash **self-collision** + **settle tuning** — these would also tighten the one remaining
-  rough edge: a free-hanging skirt/dress **side seam doesn't fully close near the form's lower
-  edge** (~26–34 mm at Standard, more at Fine; a soft-body limitation, not a fit problem — it
-  correctly does not warn). Plus the **interactive editor authoring UI** (curve/dart/notch/
-  measurements on `/edit` — data model + print lowering already exist).
+  CLAUDE.md for the full per-step status.
+  - [x] **M5c-step4 — self-collision + skirt-seam closeup + waist de-jag. DONE 2026-06-22 (gate
+    cleared: "looks much better, commit it").** `pattern-cloth.js`, garment-only (bag path
+    byte-identical; `SIM_VERSION 3→4`): (1) **cloth self-collision** `projectSelfCollision` — a
+    deterministic uniform spatial-hash node repulsion (cell=h, integer-keyed, ascending-i/j>i sweep;
+    build-once exclusion set of tri/stretch/bend/seam/weld pairs; inelastic contact via `Pp`) armed
+    only in the final settle window + reconcile, `opts.selfCollide`-gated — fixes the lower bodice
+    crumpling THROUGH itself (interpenetrating pairs 101→8). (2) a **seam-closeup** — after settle,
+    harden the inter-piece seam toward a near-weld under reduced gravity, then a low-gravity
+    re-settle, closing the free-hanging skirt/dress **side seam** (skirt 34→1 mm, dress 26→11 mm)
+    and relaxing the old over-stretch (this is the "would also tighten the hanging seams" item). (3)
+    **Taubin λ\|μ surface smoothing** (`smoothSteps`, default 6) — irons the jagged WAIST band
+    (~11→~3 mm roughness, the converging pinned/welded/seamed edges), bridged across seams so it
+    can't pull them open + snaps only close pairs (oversized misfit still gaps + warns), smooths the
+    pinned waist line too (shoulders shift ~5 mm). `mode` verdict now uses p90 of node motion (one
+    contact node rails at vmax). Tests: `verify-garment-drape.mjs` 33→**46**; bag sentinel + print
+    spine byte-identical. **Still open:** the **interactive editor authoring UI** (curve/dart/notch/
+    measurements on `/edit` — data model + print lowering already exist). A residual ~3–4 mm bulk
+    "warm" jitter remains (inherent solver under-resolution; owner-accepted).
   **Gate:** a simple flat garment drapes believably on a measurement-fit form. ✓
 - [ ] **M6 (optional, deferred) — TSL-compute acceleration / MPFB body.** Only if the
   CPU budget or dress-form fidelity proves limiting in real use.

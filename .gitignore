@@ -25,3 +25,6 @@ tools/**/*.png
 .DS_Store
 *.swp
 *~
+
+# local debugging screenshots (not source)
+Screenshots/
