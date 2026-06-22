@@ -43,6 +43,7 @@
     pieces: [], active: 0,                 // each {id,name,count,seamMm,cornerRadius,closed,nodes,notches,placements,layout}
     snapOn: true, notchMode: false, sewMode: false, unit: "in", gridMm: 5,
     seams: [],                            // schema-3 seam graph: {id, a:{piece,edge}, b:{piece,edge}, foldAngle, anchors}
+    body: null,                           // schema-3 doc-level wearer measurements {heightMm,bustMm,waistMm,hipMm}
     sewPending: null,                     // {piece:<id>, edge} — the first edge tapped, awaiting its pair
     cam: { k: 1, tx: 0, ty: 0 },
     selection: { type: "none", index: -1 },   // vertex | edge | placement | seam | none
@@ -517,7 +518,7 @@
   }
 
   // ── history (undo/redo) ──────────────────────────────────────────────────────
-  const editSnapshot = () => JSON.stringify({ pieces: state.pieces, active: state.active, name: state.name, seams: state.seams });
+  const editSnapshot = () => JSON.stringify({ pieces: state.pieces, active: state.active, name: state.name, seams: state.seams, body: state.body });
   function resetHistory() { state.history = [editSnapshot()]; state.hindex = 0; }
   function commit() {
     state.history = state.history.slice(0, state.hindex + 1);
@@ -527,18 +528,13 @@
   function restore(snap) {
     const o = JSON.parse(snap);
     geomCacheMap.clear();
-    state.pieces = (o.pieces || []).map((p, i) => ({
-      id: p.id || ("p" + (i + 1)), name: p.name || ("Piece " + (i + 1)),
-      count: Math.max(1, Math.round(p.count || 1)), seamMm: p.seamMm || 0, cornerRadius: p.cornerRadius || 0, closed: p.closed !== false,
-      role: (p.role === "strap" || p.role === "panel") ? p.role : null,
-      nodes: (p.nodes || []).map((n) => ({ x: n.x, y: n.y, radius: n.radius || 0 })),
-      notches: (p.notches || []).map((nt) => ({ x: nt.x, y: nt.y })),
-      placements: (p.placements || []).map((pl) => ({ x: pl.x, y: pl.y, w: pl.w, h: pl.h, label: pl.label || "Pocket" })),
-      layout: p.layout ? { x: p.layout.x, y: p.layout.y } : null,
-    }));
+    // Route through the canonical normalizePieces/clonePiece so every field (incl. schema-3
+    // edges/darts/place3d/saMm + upgraded notches) survives undo — the single source of truth.
+    state.pieces = G.normalizePieces({ pieces: o.pieces || [] });
     if (!state.pieces.length) state.pieces = [G.rectPiece("Piece 1", 300, 400)];
     ensurePieceIds();
     state.seams = G.normalizeSeams(o.seams || [], state.pieces);   // drop any refs the undo invalidated
+    state.body = o.body || state.body || null;
     state.active = Math.min(o.active || 0, state.pieces.length - 1);
     state.name = o.name || ""; if (nameInput) nameInput.value = state.name;
     clampSelection();
@@ -922,7 +918,7 @@
 
   // ── build / save / print ────────────────────────────────────────────────────
   function buildDoc() {
-    return G.freeformToDoc({ pieces: state.pieces, seams: state.seams, name: (nameInput.value || "Untitled").trim() || "Untitled", gridMm: state.gridMm });
+    return G.freeformToDoc({ pieces: state.pieces, seams: state.seams, body: state.body, name: (nameInput.value || "Untitled").trim() || "Untitled", gridMm: state.gridMm });
   }
   async function buildTiled(doc) {
     try { return await PDF.makeTiledPdf(doc); }
@@ -975,6 +971,7 @@
       const params = p.params || {};
       state.pieces = G.normalizePieces(params); state.gridMm = params.gridMm || 5; state.id = ident.id;
       state.seams = G.normalizeSeams(params.seams || [], state.pieces);
+      state.body = G.normalizeBody(params.body);   // schema-3 wearer measurements (null for bags)
     } else if (p.kind === "rectangle") {
       state.pieces = [G.rectPiece(p.name || "Piece", p.params.widthMm, p.params.heightMm)];
       state.name = (p.name || "Pattern") + " copy"; state.id = null;

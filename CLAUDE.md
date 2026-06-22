@@ -203,3 +203,27 @@ raw rim anchors). **Deferred — NEXT:** welding/true-volume, plain-leather stra
 into **M5** (Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md`
 + `PREVIEW.md`; `HANDOFF-M4-cloth.md` was the M4 cloth starting orders, `HANDOFF-strap.md` the strap,
 `HANDOFF-M3-fold.md` the M3 ones.
+
+**M5a / Step-3b garment AUTHORING foundation DONE (2026-06-22, owner-gated — she confirmed the seeded
+garments print + look right; flat-laying preview understood as expected pre-form/gravity).** The doc can
+now *represent* a dress, with every new feature **lowering to the existing `cut`/`seam` line-kinds inside
+`pieceGeom`/`pieceExtras` BEFORE `freeformToDoc` builds `paths`** — print spine (`pattern-pdf.js`/
+`printing.py`/calibration gate/SSRF guard) byte-identical; schema-2 docs unchanged; `params_json` still
+opaque (no DB migration). Schema bumps to **3** only when a schema-3 field is present. New in
+`pattern-geom.js`: **curves** (sparse `edges:{"<i>":{curve:{type:"quad"|"cubic"|"arc",cp:[…]}}}` in the
+edge-local frame, flattened via Maker.js `BezierCurve`/`Arc` in the *same* `pieceGeom` flatten print +
+drape share); **darts** (`piece.darts:[{id,edge,center,width,depth,kind}]`; a pure `G.loweredBoundary(piece)`
+splits a wedge edge + drops an apex into the cut outline **without mutating `piece.nodes`** so edge identity
+is stable; slash darts draw fold guides — darts live in `darts[]` only, NOT derived into `seams[]`, see the
+m5a-dart-representation memory); **variable per-node SA** (`node.saMm`, guarded miter-offset; uniform SA
+byte-identical); **notch upgrade** `{edge,t,type}` (single/double ticks; legacy `{x,y}` migrates on save);
+doc-level **`body:{heightMm,bustMm,waistMm,hipMm}`** passthrough (defaults `1650/920/740/980`). `editor.js`
+data-preservation: `restore` routes through `normalizePieces` (carries curves/darts/notches/SA through undo)
++ `body` round-trips load/save/undo (the interactive authoring UI — curve drag-handle, dart/notch/measurements
+panels — is the deferred next chunk; the data model + print lowering are done so it's additive). `main.py`
+gains an additive read-only `GET /patterns` list route. **`tools/seed-examples.mjs`** (host-side, idempotent)
+seeded **id 5 A-line Skirt, id 6 Tank Bodice, id 7 Tank Dress** (curves + darts + seams + body); existing
+bags id 3/id 4 untouched. The seeded bodice tiles to a valid 8-sheet 0-bad-page **true-1:1 Letter PDF**.
+Tests: `verify-editor-geom.mjs` (85) + `verify-seams.mjs` (27) extended, new `tools/preview/verify-lowering.mjs`
+(16); full headless suite green. Starting orders = `HANDOFF-M5-garment.md`. **NEXT: M5b** — `body-form.js`
+parametric dress form (the thing garments hang on), then M5c gravity drape.

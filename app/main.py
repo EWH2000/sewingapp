@@ -168,6 +168,15 @@ async def health():
 
 
 # ── pattern documents (server-side SQLite store) ──────────────────────────────
+@app.get("/patterns")
+async def list_patterns():
+    """Read-only id/name/kind list (newest first). Used by tools/seed-examples.mjs to
+    POST example garments idempotently (skip a name that already exists)."""
+    with Session(engine) as s:
+        rows = s.exec(select(Pattern).order_by(Pattern.updated_at.desc())).all()
+        return [{"id": r.id, "name": r.name, "kind": r.kind} for r in rows]
+
+
 @app.post("/patterns")
 async def save_pattern(payload: dict):
     name = (payload.get("name") or "Untitled").strip()[:120]

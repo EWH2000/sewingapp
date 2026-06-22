@@ -77,4 +77,53 @@ const again = G.freeformToDoc({ pieces: withSeam.pieces, seams: withSeam.seams, 
 ok(again.schema === 3 && again.seams.length === 1 && again.seams[0].id === withSeam.seams[0].id,
    "seams + schema survive a second freeformToDoc round-trip (stable id)");
 
+console.log("=== M5a: edge identity stable under curve edit / dart add / node move ===");
+{
+  // a seam on edge 2; then add a curve to edge 0, a dart to edge 1, and move node 0.
+  const base = rect("p_front", "Front");
+  const keep = [{ id: "s_keep", a: { piece: "p_front", edge: 2 }, b: { piece: "p_back", edge: 0 } }];
+  const edited = JSON.parse(JSON.stringify(base));
+  edited.edges = { "0": { curve: { type: "quad", cp: [0.5, 0.15] } } };   // edge 0 → curve
+  edited.darts = [{ id: "d1", edge: 1, center: 0.5, width: 20, depth: 40, kind: "wedge" }];  // dart on edge 1
+  edited.nodes[0].x -= 40; edited.nodes[0].y -= 15;                        // move node 0
+  const norm = G.normalizePieces({ pieces: [edited, rect("p_back", "Back", 240)] });
+  const after = G.normalizeSeams(keep, norm);
+  ok(after.length === 1 && after[0].a.edge === 2 && after[0].a.piece === "p_front",
+     "seam still references edge 2 after a curve edit + dart add + node move (no silent retarget)");
+  ok(!!norm[0].edges && !!norm[0].edges["0"], "curve survived normalize (edges carried)");
+  ok(Array.isArray(norm[0].darts) && norm[0].darts.length === 1, "dart survived normalize (darts carried)");
+}
+
+console.log("=== M5a: schema-3 fields carry + bump independently of seams ===");
+{
+  // a dart alone (no user seam) still bumps the doc to schema 3.
+  const d = G.freeformToDoc({ name: "Just a dart", pieces: [Object.assign(rect("p", "P"),
+    { darts: [{ id: "d1", edge: 0, center: 0.5, width: 20, depth: 40, kind: "wedge" }] })] });
+  ok(d.schema === 3, "a dart (no seam) bumps schema to 3");
+  ok(d.pieces[0].darts && d.pieces[0].darts.length === 1, "dart round-trips through freeformToDoc");
+  // ease/gather on a user seam survive normalization.
+  const g = G.freeformToDoc({ pieces: [rect("p_front", "Front"), rect("p_back", "Back", 240)],
+    seams: [{ a: { piece: "p_front", edge: 1 }, b: { piece: "p_back", edge: 3 }, ease: 0.12,
+      gather: { type: "gather", ratio: 2, region: [0.2, 0.8] } }] });
+  ok(g.seams[0].ease === 0.12, "seam.ease preserved");
+  ok(g.seams[0].gather && g.seams[0].gather.ratio === 2, "seam.gather preserved");
+}
+
+console.log("=== M5a: legacy {x,y} notch migrates on save, schema-1/2 still load ===");
+{
+  const legacy = Object.assign(rect("p", "P"), { notches: [{ x: 200, y: 50 }] });   // {x,y} on the right edge
+  // load (normalizePieces) must NOT destroy it
+  const loaded = G.normalizePieces({ pieces: [legacy] })[0];
+  ok(loaded.notches[0].x === 200 && loaded.notches[0].y === 50, "load preserves legacy {x,y} notch (non-destructive)");
+  // save (freeformToDoc) migrates it to {edge,t,type}
+  const saved = G.freeformToDoc({ pieces: [legacy] });
+  const nt = saved.pieces[0].notches[0];
+  ok(Number.isInteger(nt.edge) && typeof nt.t === "number" && nt.type === "single",
+     `notch migrated on save → {edge:${nt.edge}, t:${nt.t}, single}`);
+  ok(nt.edge === 1, "migrated notch lands on the right edge (edge 1)");
+  // schema-1 single `nodes` doc still loads + the doc is schema-2 clean (no garment fields)
+  const s1 = G.freeformToDoc({ nodes: rect("x", "x").nodes, seamMm: 8 });
+  ok(s1.schema === 2 && s1.pieces.length === 1 && !s1.body, "schema-1 doc still loads as one piece, schema 2");
+}
+
 console.log(`\nALL PASS — ${pass} checks`);

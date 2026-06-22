@@ -292,5 +292,66 @@ console.log("=== overlap predicate (board bboxes, mirrors editor.js) ===");
   console.log("  overlap predicate OK");
 }
 
+console.log("=== M5a: garment authoring lowers to the print spine ===");
+{
+  const rectNodes = (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+
+  // CURVES: a quad on an edge subdivides it (vs a straight chord) and the tiler accepts it.
+  const curved = { id: "p", name: "Bodice", count: 1, seamMm: 0, closed: true,
+    nodes: rectNodes(200, 300), edges: { "2": { curve: { type: "quad", cp: [0.5, 0.2] } } } };
+  const cg = G.pieceGeom(curved);
+  ok(cg.cut.length > 20, `curved edge subdivided (${cg.cut.length} pts vs 5 straight)`);
+  // a quad Bézier apex reaches HALF the control-point offset: v·chord/2 = 0.2·200/2 = 20mm.
+  const dev = Math.max(...cg.cut.filter((p) => p[0] > 30 && p[0] < 170).map((p) => Math.abs(p[1] - 300)));
+  ok(approx(dev, 20, 1.5), `curve deflects v·chord/2 at apex (${dev.toFixed(1)}mm, expect ~20)`);
+  // SAME flatten feeds print + drape: pieceGeom's cut IS what a curve consumer reads (one flatten)
+  const cgsa = G.pieceGeom(Object.assign({}, curved, { seamMm: 10 }));
+  ok(!!cgsa.seam && cgsa.seam.length > 20, "seam allowance offsets the curved outline too");
+  await assertPages((await P.makeTiledPdf(G.freeformToDoc({ name: "Curve", pieces: [curved] }))).bytes, "curved bodice → tiler");
+
+  // WEDGE DART: cut gains the apex + two legs; apex sits `depth` into the interior.
+  const darted = { id: "p", name: "Front", count: 1, seamMm: 0, closed: true,
+    nodes: rectNodes(200, 300), darts: [{ id: "d1", edge: 0, center: 0.5, width: 30, depth: 90, kind: "wedge" }] };
+  const dg = G.pieceGeom(darted);
+  ok(dg.cut.length === 8, `wedge dart adds 3 cut pts (rect 5 → ${dg.cut.length})`);
+  const apexY = Math.max(...dg.cut.filter((p) => p[0] > 70 && p[0] < 130 && p[1] < 150).map((p) => p[1]));
+  ok(approx(apexY, 90, 1), `dart apex at depth 90 into interior (${apexY.toFixed(1)})`);
+  const lb = G.loweredBoundary(darted);
+  ok(lb.dartLegs.length === 1 && Number.isInteger(lb.dartLegs[0].legA) && Number.isInteger(lb.dartLegs[0].legB),
+     "loweredBoundary identifies the two dart-leg edges (M5c sews them shut)");
+  ok(lb.dartFolds.length === 1, "wedge dart emits a stitch-guide centerline");
+  // legs are equal length (isoceles) so the drape pairs them cleanly
+  const ln = (i) => Math.hypot(lb.nodes[i + 1 >= lb.nodes.length ? 0 : i + 1].x - lb.nodes[i].x, lb.nodes[i + 1 >= lb.nodes.length ? 0 : i + 1].y - lb.nodes[i].y);
+  ok(approx(ln(lb.dartLegs[0].legA), ln(lb.dartLegs[0].legB), 0.1), "dart legs equal length (clean pairing)");
+  await assertPages((await P.makeTiledPdf(G.freeformToDoc({ name: "Dart", pieces: [darted] }))).bytes, "darted front → tiler");
+
+  // VARIABLE per-node SA: inset is wider near a saMm node, default elsewhere.
+  const varsa = G.pieceGeom({ id: "p", name: "Skirt", count: 1, seamMm: 10, closed: true,
+    nodes: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 300, saMm: 30 }, { x: 0, y: 300, saMm: 30 }] });
+  const vbb = G.bbox(varsa.seam);
+  ok(approx(vbb.maxY, 270, 0.5) && approx(vbb.minY, 10, 0.5), `variable SA: top inset 30, bottom inset 10 (${vbb.minY}..${vbb.maxY})`);
+  // uniform-SA case stays byte-identical to the pre-change path (rectangle inset 10 all round)
+  const uni = G.pieceGeom({ nodes: rectNodes(200, 300), seamMm: 10, closed: true });
+  const ubb = G.bbox(uni.seam);
+  ok(approx(ubb.minX, 10, 0.1) && approx(ubb.maxX, 190, 0.1) && approx(ubb.minY, 10, 0.1) && approx(ubb.maxY, 290, 0.1),
+     "uniform SA unchanged (Maker outline path)");
+
+  // UPGRADED notches {edge,t,type}: single = 1 tick, double = 2 ticks, placed at arc-length t.
+  const nDoc = G.freeformToDoc({ name: "Notched", pieces: [{ id: "p", name: "N", count: 1, closed: true,
+    nodes: rectNodes(200, 100), notches: [{ edge: 0, t: 0.5, type: "single" }, { edge: 1, t: 0.3, type: "double" }] }] });
+  const nticks = nDoc.paths.filter((p) => p.kind === "cut" && p.points.length === 2);
+  ok(nticks.length === 3, `single(1)+double(2) → 3 notch ticks (${nticks.length})`);
+  await assertPages((await P.makeTiledPdf(nDoc)).bytes, "upgraded-notch piece → tiler");
+
+  // SCHEMA bump + body passthrough: any schema-3 field → schema 3; body fills field defaults.
+  const gdoc = G.freeformToDoc({ name: "Garment", pieces: [curved, darted], body: { bustMm: 900 } });
+  ok(gdoc.schema === 3, "schema-3 field present → schema 3");
+  ok(gdoc.body && gdoc.body.bustMm === 900 && gdoc.body.heightMm === 1650 && gdoc.body.hipMm === 980,
+     "body passes through, absent fields default (1650/—/740/980)");
+  const plain = G.freeformToDoc({ name: "Plain bag", pieces: [{ name: "P", nodes: rectNodes(200, 200) }] });
+  ok(plain.schema === 2 && !plain.body, "a plain piece stays schema 2, no fabricated body");
+  console.log("  garment authoring lowers cleanly — print spine accepts curves/darts/SA/notches");
+}
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -142,8 +142,40 @@
       nodes: [{ x: 0, y: 0, radius: 0 }, { x: w, y: 0, radius: 0 }, { x: w, y: h, radius: 0 }, { x: 0, y: h, radius: 0 }],
       notches: [], placements: [], layout: null };
   }
+  // ── schema-3 garment-authoring helpers (additive; absent in schema ≤2 docs) ────
+  // edges: a sparse map keyed by the STRING start-node index of a curved boundary edge.
+  // Control points live in the edge-local frame (chord = X in [0,1], left-normal = Y in
+  // units of the chord length) so the curve is invariant to the shelf-packer + scale.
+  // quad = 1 cp [u,v]; cubic = 2 cps [u1,v1,u2,v2]; arc = [u,v] (apex, lowered as quad v1).
+  function cloneEdges(edges, nNodes) {
+    if (!edges || typeof edges !== "object") return {};
+    const out = {};
+    for (const k of Object.keys(edges)) {
+      const i = parseInt(k, 10);
+      if (!Number.isInteger(i) || i < 0 || i >= nNodes) continue;
+      const e = edges[k]; const c = e && e.curve;
+      if (!c || !Array.isArray(c.cp)) continue;
+      const type = (c.type === "cubic" || c.type === "arc") ? c.type : "quad";
+      const need = type === "cubic" ? 4 : 2;
+      if (c.cp.length < need) continue;
+      out[String(i)] = { curve: { type, cp: c.cp.slice(0, need).map((v) => +v || 0) } };
+    }
+    return out;
+  }
+  // a notch is either the upgraded {edge,t,type} (stable) or the legacy {x,y} (migrated on
+  // save). clonePiece keeps whichever shape it's given so a load never loses data.
+  function cloneNotch(nt) {
+    if (nt && Number.isInteger(nt.edge))
+      return { edge: nt.edge, t: Math.max(0, Math.min(1, +nt.t || 0)), type: nt.type === "double" ? "double" : "single" };
+    return { x: nt.x, y: nt.y };   // legacy
+  }
   function clonePiece(p, i) {
-    return {
+    const nodes = (p.nodes || []).map((n) => {
+      const o = { x: n.x, y: n.y, radius: n.radius || 0 };
+      if (n.saMm > 0) o.saMm = n.saMm;   // optional per-node seam-allowance override (variable SA)
+      return o;
+    });
+    const out = {
       id: p.id || ("p" + (i + 1)),
       name: p.name || ("Piece " + (i + 1)),
       count: Math.max(1, Math.round(p.count || 1)),
@@ -153,15 +185,30 @@
       // role: 3D-preview hint — "strap" renders as an arched handle, "panel" forces a
       // folded face, null = auto-detect (name/shape). Additive; absent in schema ≤2 docs.
       role: (p.role === "strap" || p.role === "panel") ? p.role : null,
-      nodes: (p.nodes || []).map((n) => ({ x: n.x, y: n.y, radius: n.radius || 0 })),
-      // notches: a point that snaps to the nearest edge (robust to vertex edits).
-      notches: (p.notches || []).map((nt) => ({ x: nt.x, y: nt.y })),
+      nodes,
+      // notches: upgraded {edge,t,type} (or legacy {x,y}, migrated on save).
+      notches: (p.notches || []).map(cloneNotch),
       // placements: a guide rectangle (e.g. where a pocket attaches) + a label.
       placements: (p.placements || []).map((pl) => ({
         x: pl.x, y: pl.y, w: Math.max(1, pl.w), h: Math.max(1, pl.h), label: pl.label || "Pocket" })),
       // layout: this piece's position on the shared board (mm); null → auto-arranged.
       layout: p.layout ? { x: p.layout.x, y: p.layout.y } : null,
     };
+    // schema-3 garment authoring — only attach when present (keeps schema-2 docs byte-clean).
+    const edges = cloneEdges(p.edges, nodes.length);
+    if (Object.keys(edges).length) out.edges = edges;
+    const darts = (p.darts || []).map((d, di) => ({
+      id: d.id || ("d" + (di + 1)),
+      edge: d.edge | 0,
+      center: Math.max(0, Math.min(1, d.center == null ? 0.5 : +d.center)),
+      width: Math.max(1, +d.width || 20),
+      depth: Math.max(1, +d.depth || 60),
+      kind: d.kind === "slash" ? "slash" : "wedge",
+    })).filter((d) => d.edge >= 0 && d.edge < nodes.length);
+    if (darts.length) out.darts = darts;
+    if (p.place3d && typeof p.place3d === "object")
+      out.place3d = { role: p.place3d.role || null, wrap: p.place3d.wrap || null };
+    return out;
   }
   // Accept the multi-piece shape, OR a legacy single-shape (schema 1 `nodes`),
   // OR nothing — always return a non-empty pieces array. Piece ids are stable + UNIQUE
@@ -191,7 +238,7 @@
     const out = [];
     for (const s of seams) {
       if (!s || !okRef(s.a) || !okRef(s.b)) continue;
-      out.push({
+      const seam = {
         id: s.id || freshId(),
         a: { piece: s.a.piece, edge: s.a.edge },
         b: { piece: s.b.piece, edge: s.b.edge },
@@ -199,7 +246,16 @@
         foldAngle: (s.foldAngle === 0 || s.foldAngle) ? s.foldAngle : null,
         // Matched arc-length fractions (notch anchors); null = default head-to-tail in the fold.
         anchors: Array.isArray(s.anchors) ? s.anchors.map((an) => ({ ta: +an.ta || 0, tb: +an.tb || 0 })) : null,
-      });
+      };
+      // Step-3 drape attributes (additive): ease (long edge is (1+ease)× the short) + gather/pleat.
+      if (s.ease) seam.ease = +s.ease || 0;
+      if (s.gather && (s.gather.type === "gather" || s.gather.type === "pleat")) {
+        const g = s.gather;
+        seam.gather = g.type === "pleat"
+          ? { type: "pleat", style: g.style || "knife", count: Math.max(1, g.count | 0 || 4), depth: Math.max(1, +g.depth || 20) }
+          : { type: "gather", ratio: Math.max(1, +g.ratio || 1.5), region: Array.isArray(g.region) ? [+g.region[0] || 0, +g.region[1] || 1] : [0, 1] };
+      }
+      out.push(seam);
     }
     return out;
   }
@@ -216,13 +272,109 @@
   const maker = () => (typeof window !== "undefined" && window.makerjs) || null;
   // chord-tolerance → max arc-facet length (mm) for a given fillet radius.
   function facetFor(r) { return r > 0 ? Math.max(0.6, Math.min(4, 2 * Math.sqrt(0.4 * r))) : 2.5; }
-  function modelFromNodes(mk, nodes) {
-    const m = { paths: {} };
+  // edge-local control point [u,v] → world point. chord d = b−a, left-normal n̂; v is scaled
+  // by the chord length so the curve is invariant to scale + the shelf-packer's translation.
+  function edgeLocalToWorld(a, b, u, v) {
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+    const nx = -dy / L, ny = dx / L;                 // unit left-normal
+    return [a.x + u * dx + v * L * nx, a.y + u * dy + v * L * ny];
+  }
+  // Build a Maker.js model from a node list. `curves` (optional) is aligned to the edges:
+  // curves[i] = {type,cp} makes edge i a Bézier/arc sub-model; else a straight Line. With no
+  // `curves` this is byte-identical to the original straight-edge builder.
+  function modelFromNodes(mk, nodes, curves) {
+    const m = { paths: {}, models: {} };
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i], b = nodes[(i + 1) % nodes.length];
-      m.paths["e" + i] = new mk.paths.Line([a.x, a.y], [b.x, b.y]);
+      const c = curves && curves[i];
+      if (c && (c.type === "quad" || c.type === "arc")) {
+        const cp = edgeLocalToWorld(a, b, c.cp[0], c.cp[1]);
+        m.models["c" + i] = new mk.models.BezierCurve([[a.x, a.y], cp, [b.x, b.y]]);
+      } else if (c && c.type === "cubic") {
+        const cp1 = edgeLocalToWorld(a, b, c.cp[0], c.cp[1]);
+        const cp2 = edgeLocalToWorld(a, b, c.cp[2], c.cp[3]);
+        m.models["c" + i] = new mk.models.BezierCurve([[a.x, a.y], cp1, cp2, [b.x, b.y]]);
+      } else {
+        m.paths["e" + i] = new mk.paths.Line([a.x, a.y], [b.x, b.y]);
+      }
     }
     return m;
+  }
+  // ── dart lowering (pure, Maker-free): split a wedge dart's edge + drop an apex ──────
+  // Returns the boundary topology the print AND (M5c) the drape consume, so their edge
+  // indexing agrees. `nodes` is the lowered node list (authored corners preserved, dart
+  // points spliced in); `edgeMap[i]` = the authored edge a lowered edge came from (−1 for a
+  // dart leg); `dartLegs` identifies the two leg edges per wedge dart (M5c sews them shut);
+  // `dartFolds` are interior fold lines for slash darts. piece.nodes is NEVER mutated.
+  function loweredBoundary(piece) {
+    const src = piece.nodes || [];
+    const darts = (piece.darts || []).filter((d) => d.kind === "wedge" && d.edge >= 0 && d.edge < src.length);
+    // polygon centroid → pick the inward edge-normal for the apex.
+    let cx = 0, cy = 0; for (const n of src) { cx += n.x; cy += n.y; } cx /= (src.length || 1); cy /= (src.length || 1);
+    // group wedge darts by authored edge, ordered along the edge by center.
+    const byEdge = {};
+    for (const d of darts) (byEdge[d.edge] = byEdge[d.edge] || []).push(d);
+    for (const k in byEdge) byEdge[k].sort((p, q) => p.center - q.center);
+    const dartFolds = [];
+    for (const d of (piece.darts || [])) {
+      if (d.kind !== "slash" || d.edge < 0 || d.edge >= src.length) continue;
+      const a = src[d.edge], b = src[(d.edge + 1) % src.length];
+      const mid = { x: a.x + d.center * (b.x - a.x), y: a.y + d.center * (b.y - a.y) };
+      const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+      let nx = -dy / L, ny = dx / L;
+      if ((cx - mid.x) * nx + (cy - mid.y) * ny < 0) { nx = -nx; ny = -ny; }
+      dartFolds.push([[round2(mid.x), round2(mid.y)], [round2(mid.x + nx * d.depth), round2(mid.y + ny * d.depth)]]);
+    }
+    const nodes = [], edgeMap = [], dartLegs = [];
+    for (let i = 0; i < src.length; i++) {
+      const a = src[i], b = src[(i + 1) % src.length];
+      nodes.push({ x: a.x, y: a.y, radius: a.radius || 0, saMm: a.saMm }); // authored corner kept
+      const here = byEdge[i];
+      if (!here || !here.length) { edgeMap.push(i); continue; }
+      const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+      let nx = -dy / L, ny = dx / L;                       // inward normal for this edge
+      const midAll = { x: a.x + 0.5 * dx, y: a.y + 0.5 * dy };
+      if ((cx - midAll.x) * nx + (cy - midAll.y) * ny < 0) { nx = -nx; ny = -ny; }
+      edgeMap.push(i);                                     // a → first split: still authored edge i
+      for (const d of here) {
+        const cDist = d.center * L, half = Math.min(d.width / 2, cDist, L - cDist);
+        const sA = { x: a.x + (cDist - half) * ux, y: a.y + (cDist - half) * uy };
+        const sB = { x: a.x + (cDist + half) * ux, y: a.y + (cDist + half) * uy };
+        const apex = { x: a.x + cDist * ux + nx * d.depth, y: a.y + cDist * uy + ny * d.depth };
+        dartFolds.push([[round2(a.x + cDist * ux), round2(a.y + cDist * uy)], [round2(apex.x), round2(apex.y)]]); // stitch guide
+        nodes.push({ x: round2(sA.x), y: round2(sA.y), radius: 0, _dart: true });   // start of leg A
+        const legA = nodes.length - 1; edgeMap.push(-1);              // sA → apex (leg A)
+        nodes.push({ x: round2(apex.x), y: round2(apex.y), radius: 0, _dart: true });
+        const legB = nodes.length - 1; edgeMap.push(-1);              // apex → sB (leg B)
+        nodes.push({ x: round2(sB.x), y: round2(sB.y), radius: 0, _dart: true });
+        edgeMap.push(i);                                              // sB → next: authored edge i again
+        dartLegs.push({ dartId: d.id, legA, legB });
+      }
+    }
+    return { nodes, edgeMap, dartLegs, dartFolds, hasDarts: darts.length > 0 };
+  }
+  // closed-polygon inward miter offset for VARIABLE per-node seam allowance. `dist(i)` gives
+  // the inset (mm) at node i. Returns a closed polyline ([…,first]) or null if it self-folds.
+  function insetPolygon(nodes, dist) {
+    const n = nodes.length; if (n < 3) return null;
+    let cx = 0, cy = 0; for (const p of nodes) { cx += p.x; cy += p.y; } cx /= n; cy /= n;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const prev = nodes[(i - 1 + n) % n], cur = nodes[i], nxt = nodes[(i + 1) % n];
+      const inN = (a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+        let nx = -dy / L, ny = dx / L; const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; } return [nx, ny]; };
+      const [n1x, n1y] = inN(prev, cur), [n2x, n2y] = inN(cur, nxt);
+      let mx = n1x + n2x, my = n1y + n2y; const mL = Math.hypot(mx, my); if (mL < 1e-6) return null;
+      mx /= mL; my /= mL; const cosH = mx * n1x + my * n1y; if (cosH < 0.2) return null;   // ~reflex spike → bail
+      const d = Math.max(0, dist(i)) / cosH;
+      out.push([round2(cur.x + mx * d), round2(cur.y + my * d)]);
+    }
+    out.push([out[0][0], out[0][1]]);
+    // sanity: the offset must shrink the bbox (a flipped/exploded offset is rejected).
+    const bo = bbox(out), bi = bbox(nodes);
+    if (bo.w > bi.w + 0.5 || bo.h > bi.h + 0.5) return null;
+    return out;
   }
   // a Maker.js model → a CLOSED polyline ([[x,y]…], last == first), or null.
   function flattenModel(mk, model, facet) {
@@ -239,42 +391,54 @@
   // failed — e.g. SA too large for a tight feature). No Maker.js / no radius /
   // no SA → straight cut line (unchanged, dependency-free).
   function pieceGeom(piece) {
-    const nodes = piece.nodes || [];
     const baseR = Math.max(0, piece.cornerRadius || 0);
     const sa = Math.max(0, piece.seamMm || 0);
-    // Per-corner radius: a node's own radius (>0) wins, else the piece default.
-    // (0 inherits the default — so a piece default can't be overridden to "sharp"
-    // at a single corner; set the default to 0 and round corners individually.)
-    const radii = nodes.map((n) => (n && n.radius > 0 ? n.radius : baseR));
+    const hasCurves = !!(piece.edges && Object.keys(piece.edges).length);
+    const hasVarSA = (piece.nodes || []).some((n) => n && n.saMm > 0);
+    // Lower darts to boundary topology (no-op when the piece has none); print + drape share it.
+    const lb = loweredBoundary(piece);
+    const nodes = lb.nodes;                       // authored corners + any dart splits
+    // Per-corner radius on the LOWERED nodes: a node's own radius (>0) wins, else the piece
+    // default (dart-split points carry radius 0, so they inherit the default like any corner).
+    const radii = nodes.map((n) => (n && n._dart ? 0 : (n && n.radius > 0 ? n.radius : baseR)));
     const maxR = radii.reduce((m, v) => Math.max(m, v), 0);
     const mk = maker();
-    if (!mk || (maxR === 0 && sa === 0)) {
-      return { cut: nodesToPoints(piece.nodes, piece.closed), seam: null };
+    if (!mk || (maxR === 0 && sa === 0 && !hasCurves && !hasVarSA)) {
+      // dependency-free degrade: straight cut (incl. dart splits via lb.nodes), no curves/SA.
+      return { cut: nodesToPoints(nodes, piece.closed), seam: null };
     }
-    const facet = facetFor(maxR);
-    let model = modelFromNodes(mk, nodes);
+    // map each lowered edge to its authored curve (skip curves on dart-split edges — rare combo).
+    const dartEdges = new Set(); for (const d of (piece.darts || [])) if (d.kind === "wedge") dartEdges.add(d.edge);
+    const curves = hasCurves ? nodes.map((_, i) => {
+      const ae = lb.edgeMap[i];
+      if (ae < 0 || dartEdges.has(ae)) return null;
+      const e = piece.edges[String(ae)];
+      return e && e.curve ? e.curve : null;
+    }) : null;
+    const facet = hasCurves ? Math.min(facetFor(maxR), 1.2) : facetFor(maxR);
+    const build = () => modelFromNodes(mk, nodes, curves);
+    let model = build();
     if (maxR > 0) {
       try {
-        // Mirror Maker.js's own chainFillet, but pick the radius per corner. Edge
-        // e[i] = node_i → node_{i+1}; corner i joins incoming e[i-1] and outgoing
-        // e[i] (they share node_i). path.fillet trims both lines in place + returns
-        // the arc — adjacent corners touch opposite ends of a shared edge, so the
-        // in-place mutations compose just as the uniform path did.
         const n = nodes.length;
         const fillets = { paths: {} };
         let added = 0;
         for (let i = 0; i < n; i++) {
           if (radii[i] <= 0) continue;
           const eIn = model.paths["e" + ((i - 1 + n) % n)], eOut = model.paths["e" + i];
-          const arc = eIn && eOut ? mk.path.fillet(eIn, eOut, radii[i]) : null;
+          const arc = eIn && eOut ? mk.path.fillet(eIn, eOut, radii[i]) : null;   // both sides straight
           if (arc) fillets.paths["f" + (added++)] = arc;
         }
-        model = added ? { models: { base: model, fillets } } : modelFromNodes(mk, nodes);
-      } catch (_) { model = modelFromNodes(mk, nodes); }
+        model = added ? { models: { base: model, fillets } } : build();
+      } catch (_) { model = build(); }
     }
-    let cut = flattenModel(mk, model, facet) || nodesToPoints(piece.nodes, piece.closed);
+    let cut = flattenModel(mk, model, facet) || nodesToPoints(nodes, piece.closed);
     let seam = null;
-    if (sa > 0) {
+    if (hasVarSA && !hasCurves) {
+      // VARIABLE seam allowance: per-node inset of the authored polygon (handles a wider hem).
+      seam = insetPolygon(piece.nodes, (i) => (piece.nodes[i] && piece.nodes[i].saMm > 0 ? piece.nodes[i].saMm : sa));
+    } else if (sa > 0) {
+      // uniform offset (now also offsets curves) — unchanged for schema-2 pieces.
       try { seam = flattenModel(mk, mk.model.outline(model, sa, 0, true), facet); }
       catch (_) { seam = null; }
     }
@@ -294,20 +458,42 @@
     }
     return { edge: best, proj, dist: bestD };
   }
-  // a notch point → a short tick straddling the nearest edge, perpendicular to it.
+  // a tick straddling the edge at point (px,py), perpendicular to edge direction (dx,dy unit).
+  function tickAt(px, py, dx, dy, len) {
+    const nx = -dy, ny = dx, h = (len || 7) / 2;
+    return [[round2(px - nx * h), round2(py - ny * h)], [round2(px + nx * h), round2(py + ny * h)]];
+  }
+  // a LEGACY {x,y} notch point → a short tick straddling the nearest edge, perpendicular to it.
   function notchMark(nodes, pt, len) {
     const n = nodes.length; if (n < 2) return null;
     const ne = nearestEdge(nodes, P(pt)); const a = nodes[ne.edge], b = nodes[(ne.edge + 1) % n];
     let dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy); if (L < 1e-6) return null; dx /= L; dy /= L;
-    const nx = -dy, ny = dx, h = (len || 7) / 2, px = ne.proj.x, py = ne.proj.y;
-    return [[round2(px - nx * h), round2(py - ny * h)], [round2(px + nx * h), round2(py + ny * h)]];
+    return tickAt(ne.proj.x, ne.proj.y, dx, dy, len);
   }
-  // per-piece extra paths/labels (in LOCAL coords): notch ticks + placement rects.
+  // an UPGRADED {edge,t,type} notch → one (single) or two (double) ticks at arc-length t on the
+  // authored edge. `double` marks the "back" so a seam can't be sewn reversed (Seamly passmark).
+  function notchTicks(nodes, nt) {
+    const n = nodes.length; if (n < 2) return [];
+    if (!Number.isInteger(nt.edge)) { const m = notchMark(nodes, nt); return m ? [m] : []; }   // legacy {x,y}
+    if (nt.edge < 0 || nt.edge >= n) return [];
+    const a = nodes[nt.edge], b = nodes[(nt.edge + 1) % n];
+    let dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy); if (L < 1e-6) return [];
+    dx /= L; dy /= L; const t = Math.max(0, Math.min(1, nt.t || 0));
+    const px = a.x + t * (b.x - a.x), py = a.y + t * (b.y - a.y);
+    if (nt.type === "double") {
+      const o = 2;   // two parallel ticks ~2mm apart along the edge
+      return [tickAt(px - dx * o, py - dy * o, dx, dy), tickAt(px + dx * o, py + dy * o, dx, dy)];
+    }
+    return [tickAt(px, py, dx, dy)];
+  }
+  // per-piece extra paths/labels (in LOCAL coords): notch ticks + dart fold guides + placement rects.
   function pieceExtras(piece) {
     const paths = [], labels = [];
     for (const nt of (piece.notches || [])) {
-      const m = notchMark(piece.nodes, nt); if (m) paths.push({ kind: "cut", points: m });
+      for (const m of notchTicks(piece.nodes, nt)) paths.push({ kind: "cut", points: m });
     }
+    // dart fold/stitch guide lines (wedge centerlines + slash fold lines); wedge cuts are in pieceGeom().cut.
+    for (const f of loweredBoundary(piece).dartFolds) paths.push({ kind: "seam", points: f });
     for (const pl of (piece.placements || [])) {
       paths.push({ kind: "seam", points: rectPts(pl.x, pl.y, pl.x + pl.w, pl.y + pl.h) });
       labels.push({ xMm: pl.x + pl.w / 2, yMm: pl.y + pl.h / 2, size: 9, lines: [pl.label || "Pocket"] });
@@ -362,9 +548,39 @@
   // shared board (WYSIWYG: what the editor shows is what prints); pieces missing
   // a layout are auto-packed first. The board is normalized to a (0,0) origin and
   // each output piece's layout is shifted to match, so the stored doc round-trips.
+  // doc-level wearer measurements parametrize the dress form (Step 3b). Absent ⇒ no body
+  // (bags don't need one). Field-level defaults so a fresh garment previews without entry.
+  const DEFAULT_BODY = { heightMm: 1650, bustMm: 920, waistMm: 740, hipMm: 980 };
+  function normalizeBody(body) {
+    if (!body || typeof body !== "object") return null;
+    return {
+      heightMm: +body.heightMm > 0 ? +body.heightMm : DEFAULT_BODY.heightMm,
+      bustMm: +body.bustMm > 0 ? +body.bustMm : DEFAULT_BODY.bustMm,
+      waistMm: +body.waistMm > 0 ? +body.waistMm : DEFAULT_BODY.waistMm,
+      hipMm: +body.hipMm > 0 ? +body.hipMm : DEFAULT_BODY.hipMm,
+    };
+  }
+  // legacy {x,y} notch → {edge,t,type} via nearestEdge, on SAVE (load stays non-destructive).
+  function migrateNotches(piece) {
+    if (!piece.notches || !piece.notches.length) return;
+    piece.notches = piece.notches.map((nt) => {
+      if (Number.isInteger(nt.edge)) return nt;
+      const ne = nearestEdge(piece.nodes, P(nt));
+      return ne.edge < 0 ? nt : { edge: ne.edge, t: round2(ne.proj.t), type: "single" };
+    });
+  }
+  // true when the doc uses any schema-3 garment-authoring field (so we bump schema, not before).
+  function hasSchema3(pieces, seams, body) {
+    if (seams && seams.length) return true;
+    if (body) return true;
+    return pieces.some((p) => (p.darts && p.darts.length) || (p.edges && Object.keys(p.edges).length)
+      || p.place3d || (p.nodes || []).some((n) => n.saMm > 0)
+      || (p.notches || []).some((nt) => Number.isInteger(nt.edge)));
+  }
   function freeformToDoc(params) {
     params = params || {};
     const pieces = normalizePieces(params);
+    for (const p of pieces) migrateNotches(p);   // upgrade legacy {x,y} notches on save
     if (pieces.some((p) => !p.layout)) packLayouts(pieces);
     const placed = pieces.map((p) => {
       const g = pieceGeom(p), ex = pieceExtras(p), L = p.layout || { x: 0, y: 0 };
@@ -392,13 +608,17 @@
       pc.p.layout = { x: round2(pc.L.x + dx), y: round2(pc.L.y + dy) };
     }
     const seams = normalizeSeams(params.seams || [], pieces);
-    return {
-      // schema 3 only when a seam graph is actually present (else stays schema 2, unchanged).
-      name: params.name || "Untitled", kind: "freeform", schema: seams.length ? 3 : 2,
+    const body = normalizeBody(params.body);
+    const doc = {
+      // schema 3 when any schema-3 field (seams / darts / curves / variable-SA / notch-upgrade /
+      // place3d / body) is present; else stays schema 2, byte-clean and unchanged.
+      name: params.name || "Untitled", kind: "freeform", schema: hasSchema3(pieces, seams, body) ? 3 : 2,
       pieces, seams, paths, labels,
       gridMm: params.gridMm || 5,
       widthMm: Math.max(1, Math.ceil(board.w)), heightMm: Math.max(1, Math.ceil(board.h)),
     };
+    if (body) doc.body = body;
+    return doc;
   }
 
   // Export the assembled board (a freeformToDoc result) as a single vector file
@@ -434,7 +654,8 @@
     edgeLength, projectPointOnSegment, pointToSegmentDist,
     bbox,
     nodesToPoints, nodesToPaths, insertVertexOnEdge, polylineToNodes,
-    rectPiece, normalizePieces, normalizeSeams, piecesFromDoc, pieceGeom, nearestEdge, notchMark,
+    rectPiece, normalizePieces, normalizeSeams, normalizeBody, piecesFromDoc, pieceGeom, nearestEdge, notchMark, notchTicks,
+    loweredBoundary, DEFAULT_BODY,
     packLayouts, normalizeDoc, freeformToDoc, exportBoard, defaultParams,
   };
 })();
