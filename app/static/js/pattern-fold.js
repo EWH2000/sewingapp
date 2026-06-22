@@ -468,7 +468,7 @@
         // direction. The renderer sweeps the band so its width lies ALONG this, so a span
         // handle meets each edge correctly instead of twisted 90° (a grab handle ignores it
         // and uses the planar-rainbow path, since there the edge runs along the chord).
-        let anchors, grab = false, span = false, widthDir, minEdge = lenMm;
+        let anchors, grab = false, widthDir;
         if (edges.length === 1) {
           anchors = [edges[0].mid];                          // one end sewn → free end arcs up
           widthDir = normalize(sub(edges[0].w1, edges[0].w0));
@@ -478,25 +478,22 @@
           const spanMm = Math.min(0.5 * eLen, lenMm * 0.4), f = spanMm / eLen / 2;
           anchors = [lerp(e.w0, e.w1, 0.5 - f), lerp(e.w0, e.w1, 0.5 + f)];
           widthDir = normalize(sub(e.w1, e.w0));
-        } else {
-          span = true;
-          anchors = [edges[0].mid, edges[1].mid];            // span between two distinct edges
+        } else {                                             // span: ends on two distinct edges →
+          anchors = [edges[0].mid, edges[1].mid];            // ONE bridging handle over the top
           const d0 = normalize(sub(edges[0].w1, edges[0].w0));
           const d1 = normalize(sub(edges[1].w1, edges[1].w0));
           widthDir = normalize(add(d0, scale(d1, dot(d0, d1) >= 0 ? 1 : -1)));   // sign-aligned avg
-          minEdge = Math.min(len(sub(edges[0].w1, edges[0].w0)), len(sub(edges[1].w1, edges[1].w0))) || lenMm;
         }
         const base = { piece: sp.id, lenMm: round3(lenMm), widthMm: round3(widthMm), grab, anchors: anchors.map(rv), widthDir: rv(widthDir) };
         const count = sp.count || 1;
+        // A GRAB handle (a loop on one face) cut ×2 is the classic tote — the 2nd copy goes on the
+        // opposite face → mirror it. A SPAN handle already bridges the opening front-to-back, so
+        // it's a SINGLE handle however many layers are cut; count does NOT duplicate it (a count×2
+        // span used to wrongly render a parallel pair — the bug this fixes).
         if (grab && count >= 2) {                            // mirror a 2nd grab handle to the opposite face
           const m = (p) => [2 * center[0] - p[0], p[1], 2 * center[2] - p[2]];
           out.push(base);
           out.push(Object.assign({}, base, { mirrored: true, anchors: anchors.map((a) => rv(m(a))), widthDir: [-widthDir[0], widthDir[1], -widthDir[2]] }));
-        } else if (span && count >= 2) {                     // two PARALLEL over-the-top handles, offset along the edges
-          const offMm = Math.min(0.25 * minEdge, Math.max(widthMm, 0.15 * minEdge));
-          const off = scale(widthDir, offMm);
-          out.push(Object.assign({}, base, { paired: true, anchors: anchors.map((a) => rv(add(a, off))) }));
-          out.push(Object.assign({}, base, { paired: true, anchors: anchors.map((a) => rv(sub(a, off))) }));
         } else {
           out.push(base);
         }

@@ -9,6 +9,11 @@
   <script src="{{ base_path }}/static/js/pattern-geom.js?v={{ asset_ver }}" defer></script>
   {# M3 rigid fold solver (window.PatternFold) — classic defer, before the ESM module reads it. #}
   <script src="{{ base_path }}/static/js/pattern-fold.js?v={{ asset_ver }}" defer></script>
+  {# M4 cloth drape: poly2tri (CDT) → pattern-mesh (triangulation) → pattern-cloth (XPBD solver),
+     classic defer in dependency order, before the ESM module reads window.PatternCloth. #}
+  <script src="{{ base_path }}/static/js/vendor/poly2tri.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-mesh.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-cloth.js?v={{ asset_ver }}" defer></script>
 
   {# Same injection channel as window.SEWING_EDIT on /edit — id/name/kind only. #}
   <script>window.SEWING_PREVIEW = {{ (pattern or {})|tojson }};</script>
@@ -95,6 +100,42 @@
     /* Floor-piece override — top-right, over the studio. */
     .pv-floor { position: absolute; right: 16px; top: 15px; z-index: 3; }
     .pv-floor[hidden] { display: none; }
+
+    /* Drape controls (M4) — View toggle + Detail, stacked under the floor control. */
+    .pv-controls {
+      position: absolute; right: 16px; top: 58px; z-index: 3;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+    }
+    .pv-controls[hidden] { display: none; }
+    .pv-seg {
+      display: inline-flex; overflow: hidden; border-radius: 4px;
+      background: var(--pv-plate); border: 1px solid rgba(255,255,255,0.1);
+      border-top: 2px solid var(--pv-brass);
+      -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+    }
+    .pv-seg__btn {
+      -webkit-appearance: none; appearance: none; background: transparent;
+      color: var(--pv-muted); border: 0; padding: 7px 14px; cursor: pointer;
+      font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em;
+    }
+    .pv-seg__btn.is-on { color: #1b1d21; background: var(--pv-brass); }
+
+    /* "Settling…" badge — top-center while the solver runs (a second or two). */
+    .pv-settling {
+      position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 4;
+      display: flex; align-items: center; gap: 9px; padding: 7px 15px;
+      background: var(--pv-plate); color: var(--pv-paper);
+      border: 1px solid rgba(255,255,255,0.1); border-top: 2px solid var(--pv-brass);
+      border-radius: 4px; font-size: 12.5px; letter-spacing: 0.05em;
+      -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+    }
+    .pv-settling[hidden] { display: none; }
+    .pv-settling__dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      border: 2px solid var(--pv-brass); border-top-color: transparent;
+      animation: pv-spin 0.7s linear infinite;
+    }
+    @keyframes pv-spin { to { transform: rotate(360deg); } }
     .pv-floor__sel {
       -webkit-appearance: none; appearance: none;
       background: var(--pv-plate); color: var(--pv-paper);
@@ -125,10 +166,26 @@
     <h1 class="pv-title">{{ pattern.name if pattern else "Preview" }}</h1>
   </div>
 
-  {# Floor-piece override (fold path only) — shown by preview.js when a freeform doc folds. #}
+  {# Floor-piece override (freeform path) — shown by preview.js when a freeform doc folds/drapes. #}
   <div class="pv-floor" id="pv-floor-wrap" hidden>
     <select id="pv-floor" class="pv-floor__sel" aria-label="Which piece sits on the floor"></select>
   </div>
+
+  {# Drape controls (M4) — View toggle (Inflated default / Folded) + Preview detail. #}
+  <div class="pv-controls" id="pv-controls" hidden>
+    <div class="pv-seg" role="group" aria-label="View">
+      <button type="button" class="pv-seg__btn is-on" data-view="inflated">Inflated</button>
+      <button type="button" class="pv-seg__btn" data-view="fold">Folded</button>
+    </div>
+    <select id="pv-detail" class="pv-floor__sel" aria-label="Preview detail">
+      <option value="25">Detail: Draft</option>
+      <option value="20" selected>Detail: Standard</option>
+      <option value="15">Detail: Fine</option>
+    </select>
+  </div>
+
+  {# "Settling…" indicator — top-center while the cloth solver runs. #}
+  <div class="pv-settling" id="pv-settling" hidden><span class="pv-settling__dot"></span> Settling…</div>
 
   <figure class="pv-spec" id="pv-spec" hidden>
     <figcaption class="pv-spec__head">Finished measurements</figcaption>

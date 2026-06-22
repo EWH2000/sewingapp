@@ -157,12 +157,25 @@ pattern-textured 3D box on the iPad. `PREVIEW.md §4`.
         leather band per handle — a **grab** handle (both ends on one edge) is a planar rainbow,
         a **span** (e.g. side-to-side over the top) **sweeps its width along the bag edges** so it
         meets the seams square; count×2 grab auto-mirrors. Additive per-piece `role` + a Pieces-
-        panel **Type: Auto/Panel/Strap**. count×2 span → **parallel pair** (offset along the bag
-        edges); count×2 grab → opposite-face mirror. Tests `verify-fold.mjs` (62) +
-        `verify-fold-mesh.mjs` (15). *Deferred: plain-leather bands (no pattern texture).*
-- [ ] **M4** — Step 3a inflated bag (`pattern-mesh.js` poly2tri triangulation;
-      `pattern-cloth.js` XPBD distance/bend/seam/pressure; the §6.6 stability protocol;
-      `preview3d` settled cache). *~6–10.*
+        panel **Type: Auto/Panel/Strap**. count×2 grab → opposite-face mirror; count×2 **span** →
+        a SINGLE bridging handle (count = cut quantity; the parallel-pair behavior was a bug, fixed
+        2026-06-21 during M4). Tests `verify-fold.mjs` (61) + `verify-fold-mesh.mjs` (15).
+        *Deferred: plain-leather bands (no pattern texture); strap snap-to-surface (an M4 deferral).*
+- [x] **M4** — Step 3a inflated bag. *DONE 2026-06-21 (owner gate cleared on her touchscreen
+      laptop). `pattern-cloth.js` XPBD solver (warm-start from the M3 fold; per-seam direction
+      derived from the warm start; §6.6 zero-gravity eased stitch-up + velocity clamp; per-face
+      outward pressure **bounded by a per-node inflation tether ≤5% of the bag diagonal** so it
+      rounds, never balloons; no weld in v1 — stiff zero-rest seam springs keep one piece per
+      node → clean per-piece texturing). `preview3d.drapeToGroup` (pattern-textured per-piece;
+      straps via `addStraps`). Fold⇄Inflated toggle (inflated default) + Preview-detail
+      Draft/Standard/Fine + "Settling…" badge (double-rAF) + settled cache (`params.preview3d`,
+      geomHash-keyed, opaque — no server change). Tests `verify-cloth.mjs` (26) +
+      `verify-cloth-mesh.mjs` (16). **Corrected the spec:** §6.4's "stretch balances pressure" is
+      a knife-edge buckling threshold on a free-top bag (bend can't damp the global mode) — the
+      per-node tether is the robustness fix. **Deferred → NEXT: strap SNAP-TO-SURFACE**
+      (owner-confirmed: handles anchor at the folded rim, sit slightly inside the puffed bag —
+      snap them to the settled surface); then weld/true-volume, plain-leather strap texture. Also
+      fixed a span-strap count×2 bug (parallel pair → single handle).* **← warm start for M5.**
 - [ ] **M5** — Step 3b garment on a form (`body-form.js` lofted dress form + analytic
       ellipse collider from `body` measurements; gravity drape; pinning + timed release;
       spatial-hash self-collision; fabric presets; curves/ease/darts in the drape). The

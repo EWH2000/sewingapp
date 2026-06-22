@@ -381,6 +381,83 @@ export function pieceFaceTexture(piece, unit = 'in') {
   return tex;
 }
 
+// ── drapeToGroup: build a THREE.Group from a settled cloth drape (M4 / Step 3a) ────────
+// solveResult = { nodes:[[x,y,z]…], tris:[[a,b,c]…], pieceRanges:[{piece,start,count}],
+// localUV:[[lx,ly]…] } from window.PatternCloth.solveDrape (or decodeDrape of the cache). Builds
+// one textured BufferGeometry per piece — UVs from each piece's LOCAL 2D over its authored-nodes
+// bbox, the SAME frame buildFoldedGroup/pieceFaceTexture use, so the pattern registers — with a
+// per-piece outward U-flip so inward-facing panels read forward (not mirror-reversed), exactly
+// like the M3 fold. Straps ride on top via the UNCHANGED addStraps (from the warm-start `fold`).
+// Additive: leaves docToMesh/buildFoldedGroup/the box path intact. Headless-safe: textures come
+// only via opts.makeTexture (omitted under Node → plain fabric, geometry identical).
+export function drapeToGroup(pattern, solveResult, fold, opts = {}) {
+  const group = new THREE.Group();
+  group.name = 'pattern';
+  const params = (pattern && pattern.params) || pattern || {};
+  const byId = {}; (params.pieces || []).forEach((p) => { byId[p.id] = p; });
+  const nodes = solveResult && solveResult.nodes, tris = solveResult && solveResult.tris;
+  const ranges = solveResult && solveResult.pieceRanges, localUV = solveResult && solveResult.localUV;
+  if (!nodes || !nodes.length || !ranges || !ranges.length) { group.userData.drape = { empty: true }; return group; }
+
+  const G = (typeof window !== 'undefined') && window.PatternGeom;
+  const make = opts.makeTexture;
+
+  // bag center (mean of all nodes) → the outward-facing test, like buildFoldedGroup's `bag`.
+  let bx = 0, by = 0, bz = 0;
+  for (const n of nodes) { bx += n[0]; by += n[1]; bz += n[2]; }
+  bx /= nodes.length; by /= nodes.length; bz /= nodes.length;
+
+  // node → owning piece-range (ranges are contiguous; one piece per node, no welding in v1).
+  const nodeRange = new Int32Array(nodes.length).fill(-1);
+  ranges.forEach((pr, r) => { for (let k = 0; k < pr.count; k++) nodeRange[pr.start + k] = r; });
+  const perPieceTris = ranges.map(() => []);
+  for (const t of tris) { const r = nodeRange[t[0]]; if (r >= 0) perPieceTris[r].push(t); }
+
+  for (let r = 0; r < ranges.length; r++) {
+    const pr = ranges[r], piece = byId[pr.piece], ptris = perPieceTris[r];
+    if (!ptris.length) continue;
+    const start = pr.start, count = pr.count;
+    const pos = new Float32Array(count * 3);
+    let cx = 0, cy = 0, cz = 0;
+    for (let k = 0; k < count; k++) { const n = nodes[start + k]; pos[3 * k] = n[0]; pos[3 * k + 1] = n[1]; pos[3 * k + 2] = n[2]; cx += n[0]; cy += n[1]; cz += n[2]; }
+    cx /= count; cy /= count; cz /= count;
+    // area-weighted average face normal (to decide which way the textured face points)
+    let anx = 0, any = 0, anz = 0, idx = [];
+    for (const t of ptris) {
+      const A = nodes[t[0]], B = nodes[t[1]], C = nodes[t[2]];
+      const e1x = B[0] - A[0], e1y = B[1] - A[1], e1z = B[2] - A[2];
+      const e2x = C[0] - A[0], e2y = C[1] - A[1], e2z = C[2] - A[2];
+      anx += e1y * e2z - e1z * e2y; any += e1z * e2x - e1x * e2z; anz += e1x * e2y - e1y * e2x;
+      idx.push(t[0] - start, t[1] - start, t[2] - start);
+    }
+    const outward = anx * (cx - bx) + any * (cy - by) + anz * (cz - bz) >= 0;
+    // UVs from local 2D over the authored-nodes bbox (identical formula to buildFoldedGroup).
+    const bb = G && G.bbox && piece ? G.bbox(piece.nodes) : localBbox((piece && piece.nodes) || []);
+    const w = bb.w || 1, h = bb.h || 1, uv = new Float32Array(count * 2);
+    for (let k = 0; k < count; k++) {
+      const lc = localUV[start + k], u = (lc[0] - bb.minX) / w;
+      uv[2 * k] = outward ? u : 1 - u; uv[2 * k + 1] = (lc[1] - bb.minY) / h;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const tex = make && piece ? make(piece) : null;
+    const mat = tex
+      ? new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.92, metalness: 0 })
+      : new THREE.MeshStandardMaterial({ color: 0xf3efe7, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+    const m = new THREE.Mesh(geo, mat);
+    m.userData.kind = 'face'; m.userData.pieceId = pr.piece; m.name = 'face:' + pr.piece;
+    group.add(m);
+  }
+
+  if (fold) addStraps(group, fold);
+  group.userData.drape = { mode: solveResult.mode, energy: solveResult.energy, pieceCount: ranges.length, straps: (fold && fold.straps) || [] };
+  group.updateMatrixWorld(true);
+  return group;
+}
+
 // ── frameObject: aim + distance the camera so `obj` fits, orbit target at its center ──
 export function frameObject(camera, controls, obj, fitOffset = 1.35) {
   const box = new THREE.Box3().setFromObject(obj);

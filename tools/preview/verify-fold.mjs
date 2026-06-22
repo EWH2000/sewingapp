@@ -231,7 +231,7 @@ console.log("=== Fixture H: tote with a strap (excluded from the fold, rendered 
   ok(mir && (len(sub(mir.anchors[0], A)) > 30 || len(sub(mir.anchors[1], B)) > 30), "mirror handle is offset from the original (opposite face)");
 }
 
-console.log("=== Fixture J: strap SPANS the two sides (width along edges; ×2 → parallel pair) ===");
+console.log("=== Fixture J: strap SPANS the two sides (width along edges; ×N → ONE handle) ===");
 {
   const mk = (cnt) => {
     const { pieces, seams } = tote();
@@ -257,14 +257,13 @@ console.log("=== Fixture J: strap SPANS the two sides (width along edges; ×2 �
   ok(dotv(unit(sub(B1, A1)), wd1) < 0.3, "(×1) width ⊥ span direction (meets the side edges square)");
   ok(A1[1] > 200 && B1[1] > 200, `(×1) anchors near the bag top, got y=${A1[1].toFixed(0)}`);
 
-  // cut ×2 → two PARALLEL handles offset along the side-edge direction
+  // cut ×2 → STILL ONE handle: a span already bridges the opening front-to-back, so extra cut
+  // layers don't duplicate it (a count×2 span used to wrongly render a parallel pair).
   const r2 = mk(2);
-  ok(r2.straps.length === 2, `(×2) span → parallel pair, got ${r2.straps.length}`);
-  const [h0, h1] = r2.straps;
-  ok(h0.grab === false && h1.grab === false, "(×2) both span handles");
-  const off = sub(h1.anchors[0], h0.anchors[0]);
-  ok(len(off) > 1 && dotv(unit(off), h0.widthDir) > 0.9, `(×2) pair offset ALONG widthDir (parallel, not crossed), got d=${len(off).toFixed(1)}`);
-  ok(dotv(unit(sub(h0.anchors[1], h0.anchors[0])), h0.widthDir) < 0.3, "(×2) width still ⊥ span direction");
+  ok(r2.straps.length === 1, `(×2) span → still ONE handle (count doesn't duplicate a span), got ${r2.straps.length}`);
+  ok(r2.straps[0].grab === false, "(×2) span handle (not grab)");
+  const a0 = r2.straps[0].anchors[0], a1 = r2.straps[0].anchors[1];
+  ok(len(sub(a0, A1)) < 1 && len(sub(a1, B1)) < 1, "(×2) span handle placed identically to ×1 (count = cut quantity only)");
 }
 
 console.log("=== Fixture I: isStrapPiece predicate (role / name / shape) ===");

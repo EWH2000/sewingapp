@@ -1,5 +1,17 @@
 # Handoff — M4 / Step 3a: sew the panels into an inflated 3D bag (XPBD cloth)
 
+> **✅ DONE 2026-06-21 — owner gate cleared on her touchscreen laptop.** Built `pattern-cloth.js`
+> (XPBD solver), `preview3d.drapeToGroup` (pattern-textured render), the `/preview` Fold⇄Inflated
+> toggle + detail control + "Settling…" badge + settled cache, with tests `verify-cloth.mjs` (26) +
+> `verify-cloth-mesh.mjs` (16). Two changes vs the orders below: **(1)** inflation uses a **per-node
+> tether** (≤5% of the bag diagonal) on top of per-face pressure — §6.4's "stretch balances pressure"
+> turned out to be a knife-edge buckling threshold on a free-top bag, so the tether is what makes it
+> round-not-balloon robustly; **(2)** v1 does **not** weld (stiff zero-rest seam springs instead), to
+> keep one piece per node for clean texturing. **Next (deferred): strap snap-to-surface** (owner-
+> confirmed want — handles anchor at the folded rim, so they sit slightly inside the puffed bag). The
+> live status is in `CLAUDE.md` + `PREVIEW.md §9` + `HANDOFF-3d-preview.md`. The starting orders below
+> are kept for the record.
+
 > **For the next session.** Start in `~/sewingapp/`. Read, in order: `CLAUDE.md` (app guide +
 > live status), `DESIGN.md` (architecture + locked decisions), `PRINTING.md` (the sacred print
 > spine — never touched here), `PREVIEW.md` (the 3D-preview build spec — **read all of §6 Step 3,
@@ -167,3 +179,11 @@ rhythm: build → deploy → owner eyeballs → "looks good" → docs + commit.
 ---
 ## New asks for this session
 > _(owner: add anything to adjust before/while building this.)_
+
+**Outcome (2026-06-21):** built solver-first to a headless checkpoint (owner reviewed), then the
+render/UI/cache, deployed, owner gated it — "looks really good." Inflation is a gentle, robust puff
+(per-node tether, not raw pressure). Also fixed a reported span-strap `count×2` bug (it rendered a
+parallel pair; a side-to-side spanning strap is one bridging handle regardless of cut count).
+**Owner's one explicit follow-up: strap SNAP-TO-SURFACE** — the handles currently anchor at the
+*folded* (warm-start) rim, so on the inflated bag they sit a little inside the surface; snap each
+anchor to the nearest settled mesh node. That's the lead item for the next strap/M4-polish pass.

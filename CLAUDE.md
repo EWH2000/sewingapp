@@ -171,13 +171,34 @@ bag edges** (`widthDir`) so it meets the seams square, not twisted; a count×2 g
 to the opposite face. Additive per-piece **`role`** (`clonePiece`+editor `restore`+a Pieces-panel
 **Type: Auto/Panel/Strap** select). `strapRibbonGeometry` gained an optional `frame` ({normal}|
 {widthDir}) — the box ribbon path stays byte-identical. Tests: `verify-fold.mjs` (59) +
-`verify-fold-mesh.mjs` (15); box-mesh/print spine/calibration gate untouched. A count×2 *span*
-strap renders as a **parallel pair** (offset along the bag edges); a count×2 *grab* mirrors to the
-opposite face. **Still deferred:** strap bands are plain leather (no pattern texture); notch
-`{edge,t,type}` + anchors UI; dart self-seams; atelier re-skin. **Next: M4** (Step 3a inflated bag). **M4 prep layer DONE** (headless, no visible change): vendored `poly2tri.js` +
-`pattern-mesh.js` (`triangulatePiece` → sim mesh with distance/bend constraints; `seamPairs` →
-arc-length seam node pairing) + tests `verify-mesh.mjs` (15) / `verify-seam-correspondence.mjs`
-(16). **The rest of M4 (the XPBD cloth solver `pattern-cloth.js` → inflated bag → render + cache)
-has its own starting orders in `HANDOFF-M4-cloth.md`.** Build-tracking + locked decisions live in
-`HANDOFF-3d-preview.md` + `PREVIEW.md`; `HANDOFF-strap.md` was the strap starting orders,
+`verify-fold-mesh.mjs` (15); box-mesh/print spine/calibration gate untouched. A count×2 *grab*
+strap mirrors to the opposite face; a count×2 **span** strap is a SINGLE bridging handle (count is
+just cut quantity — it no longer renders a parallel pair; fixed 2026-06-21). **Still deferred:**
+strap bands are plain leather (no pattern texture); notch `{edge,t,type}` + anchors UI; dart
+self-seams; atelier re-skin.
+
+**M4 / Step 3a — inflated 3D bag DONE (2026-06-21, owner gate cleared on her touchscreen laptop).**
+A freeform-with-seams bag now previews as a sewn, **inflated**, orbitable soft bag (the default view
+on `/preview/{id}`; a **Fold ⇄ Inflated** toggle keeps the rigid M3 fold). Hand-rolled XPBD mass-spring
+solver `app/static/js/pattern-cloth.js` (pure/headless `window.PatternCloth.solveDrape`): warm-starts
+each non-strap piece's sim mesh from the M3 fold's `{pos,quat}`, derives per-seam sew direction from
+the warm start (mirrors `inferFlip`), then runs the §6.6 protocol — zero-gravity eased stitch-up (seam
+compliance `1e-1→1e-6`, per-substep node-move clamped to `0.5·h`) → **per-face outward "puffiness"
+pressure** (open-top safe; orient outward by the bag node-centroid) bounded by a **per-node inflation
+tether** (≤5% of the bag diagonal — so it ROUNDS, never balloons, regardless of pressure: the
+robustness win) → settle/freeze on low motion. Deterministic (no RNG); ~1–4k nodes; settles in
+~0.3–0.6 s. Render: additive `preview3d.drapeToGroup` — **pattern-textured per-piece** sub-geometries
+(UVs from `localUV` over the authored-nodes bbox, per-piece outward U-flip), straps ride on top via the
+unchanged `addStraps`. Page: **Preview detail Draft/Standard/Fine** (`h` 25/20/15), the Fold⇄Inflated
+toggle, a **"Settling…"** badge (double-rAF so it paints before the blocking solve), and a **settled-mesh
+cache** in the doc (`params.preview3d`: int16@0.1mm + base64, `geomHash`-keyed — instant reopen,
+re-solves only on an edit/detail/floor change; opaque `params_json`, no server change). `pattern-cloth.js`
+also exports `geomHash`/`encodeDrape`/`decodeDrape`. Box/M3-fold paths + print spine + calibration gate
+byte-identical. Tests: `tools/preview/verify-cloth.mjs` (26) + `verify-cloth-mesh.mjs` (16); the prep
+layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) + `verify-fold.mjs` (61) /
+`verify-fold-mesh.mjs` (15) stay green. **Deferred — NEXT: strap SNAP-TO-SURFACE** (handles anchor at
+the *folded* rim, so on the puffed bag they sit slightly inside — owner confirmed she wants them snapped
+to the settled surface); then welding/true-volume, plain-leather strap texture — all leaning into **M5**
+(Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md`
++ `PREVIEW.md`; `HANDOFF-M4-cloth.md` was the M4 cloth starting orders, `HANDOFF-strap.md` the strap,
 `HANDOFF-M3-fold.md` the M3 ones.

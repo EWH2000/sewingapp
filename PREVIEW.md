@@ -905,20 +905,33 @@ focused sessions; estimates, not commitments — 3b especially.)
     it isn't twisted; count×2 grab auto-mirrors to the opposite face and count×2 span renders a
     parallel pair. Additive per-piece `role` + editor Type toggle. *Deferred: plain-leather bands
     (no pattern texture).*
-- [ ] **M4 — Step 3a inflated bag (~6–10).** `pattern-mesh.js` (poly2tri), `pattern-
-  cloth.js` (XPBD: distance/bend/seam/pressure), the §6.6 stability protocol,
-  `preview3d` cache; mesh/correspondence tests. **Gate:** a sewn, inflated, orbitable,
-  cached bag that doesn't explode on her real tote.
-  - [x] **Prep layer done (2026-06-21, headless only — no visible change yet).** Vendored
-    `poly2tri.js`; `pattern-mesh.js` triangulates a piece into a sim mesh (boundary resampled
-    to ~h with authored-edge+t tags, interior Steiner grid, CDT, distance+bend constraints —
-    `verify-mesh.mjs`, 15) and pairs seam nodes by arc-length honoring the fold's head-to-
-    tail/head-to-head direction (`seamPairs` — `verify-seam-correspondence.mjs`, 16).
-  - [ ] **Next: `pattern-cloth.js`** — the XPBD core consuming mesh + seamPairs + the rigid
-    fold as the warm start: §6.6 stitch-up (zero-gravity, eased seam stiffness, small substeps
-    + velocity clamp), weld, inflate (volume/pressure), settle; then the `preview3d` drape view
-    + `preview.html` detail slider + the `preview3d` settled cache. Ends in her hands-on gate.
-    **Full starting orders: `HANDOFF-M4-cloth.md`.**
+- [x] **M4 — Step 3a inflated bag. DONE 2026-06-21 (owner gate cleared on her touchscreen
+  laptop).** `pattern-cloth.js` (pure/headless `window.PatternCloth.solveDrape`): warm-start
+  from the M3 fold's `{pos,quat}`, per-seam sew direction derived from the warm start (mirrors
+  `inferFlip`), the §6.6 protocol — zero-gravity eased stitch-up (seam compliance `1e-1→1e-6`,
+  per-substep node-move clamped to `0.5·h`) → **per-face outward pressure** (open-top safe;
+  outward by the bag node-centroid) **bounded by a per-node inflation tether** (≤5% of the bag
+  diagonal, so it rounds rather than balloons — the robustness fix vs the §6.4 "stretch balances
+  pressure" assumption, which has a sharp buckling threshold) → settle/freeze. **v1 does NOT
+  weld** (`welds:[]`) — stiff zero-rest seam springs keep each node owned by one piece → clean
+  per-piece texturing. Render: additive `preview3d.drapeToGroup` (pattern-textured per-piece
+  sub-geometries, `localUV` over the authored bbox, per-piece outward U-flip; straps ride on top
+  via the unchanged `addStraps`). Page: Fold⇄Inflated toggle (inflated default), Preview detail
+  Draft/Standard/Fine (`h` 25/20/15), a double-rAF "Settling…" badge, and the **settled-drape
+  cache** `params.preview3d` (int16@0.1mm + base64, `geomHash`-keyed; opaque `params_json`, no
+  server change). Tests: `tools/preview/verify-cloth.mjs` (26) + `verify-cloth-mesh.mjs` (16),
+  prep layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) green. **Corrected the
+  spec:** per-face pressure is NOT self-limiting on a free-top-edge bag (it buckles at a knife-edge
+  threshold; bend can't damp it — it's a global mode), so the per-node tether is what makes
+  inflation robust across her real totes. **Deferred — NEXT: strap snap-to-surface** (handles
+  anchor at the folded rim, sit slightly inside the puffed bag — owner confirmed she wants them
+  snapped); then welding/true-volume, plain-leather strap texture, notch/dart authoring — leaning
+  into M5. Also this session: fixed a span-strap `count×2` bug (was a parallel pair; now a single
+  bridging handle). **Starting orders were `HANDOFF-M4-cloth.md`.**
+  - [x] **Prep layer (2026-06-21, headless).** Vendored `poly2tri.js`; `pattern-mesh.js`
+    triangulates a piece into a sim mesh (boundary resampled to ~h with authored-edge+t tags,
+    interior Steiner grid, CDT, distance+bend constraints) and pairs seam nodes by arc-length
+    honoring the fold's direction (`seamPairs`).
 - [ ] **M5 — Step 3b garment on a form (~10–20).** `body-form.js` (loft + analytic
   ellipse collider) driven by `body` measurements; gravity drape, pinning + timed
   release, spatial-hash self-collision, fabric presets, curves/ease/darts in the drape.
