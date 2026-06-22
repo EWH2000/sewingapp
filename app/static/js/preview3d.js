@@ -514,3 +514,62 @@ export function contactShadow(footWmm, footDmm) {
   m.rotation.x = -Math.PI / 2; m.position.y = -2; m.renderOrder = -1; m.userData.kind = 'shadow';
   return m;
 }
+
+// ── dress form (M5b): a ring stack from window.BodyForm → a translucent torso ──────────
+// dressFormGeometry tessellates the lofted elliptical rings into a BufferGeometry (the form
+// sits on the floor, y=0, since BodyForm lofts with yMin=0). No DOM, so the headless test runs
+// it under Node. radial = samples around each ellipse; caps close the hem + shoulder.
+export function dressFormGeometry(stack, opts = {}) {
+  const radial = Math.max(8, opts.radial || 48);
+  const rings = stack.rings, R = rings.length, cols = radial + 1;   // +1 = duplicate seam column
+  const pos = [], uv = [];
+  for (let i = 0; i < R; i++) {
+    const r = rings[i];
+    for (let j = 0; j <= radial; j++) {
+      const th = (2 * Math.PI * j) / radial;
+      pos.push(r.cx + r.a * Math.cos(th), r.y, r.cz + r.b * Math.sin(th));
+      uv.push(j / radial, i / (R - 1));
+    }
+  }
+  const idx = [];
+  for (let i = 0; i < R - 1; i++) {
+    for (let j = 0; j < radial; j++) {
+      const a = i * cols + j, b = a + 1, c = (i + 1) * cols + j, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  if (opts.caps !== false) {
+    const botC = pos.length / 3; pos.push(rings[0].cx, rings[0].y, rings[0].cz); uv.push(0.5, 0);
+    const topC = pos.length / 3; pos.push(rings[R - 1].cx, rings[R - 1].y, rings[R - 1].cz); uv.push(0.5, 1);
+    for (let j = 0; j < radial; j++) { idx.push(botC, j, j + 1); }                       // hem fan
+    const base = (R - 1) * cols;
+    for (let j = 0; j < radial; j++) { idx.push(topC, base + j + 1, base + j); }          // shoulder fan
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  return geo;
+}
+
+// dressFormGroup(body, opts) → a THREE.Group with the translucent form. group.userData.stack is
+// the SAME ring stack the M5c solver collides against (render + collision can't drift). Returns
+// an empty group (userData.unsupported) if window.BodyForm isn't loaded.
+export function dressFormGroup(body, opts = {}) {
+  const BF = (typeof window !== 'undefined') && window.BodyForm;
+  const group = new THREE.Group(); group.name = 'dressform';
+  if (!BF) { group.userData.unsupported = 'no-bodyform'; return group; }
+  const stack = BF.loft(body, opts);
+  const geo = dressFormGeometry(stack, opts);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xded7cc,                 // unbleached calico / muslin — a literal dress form
+    transparent: true, opacity: 0.34,
+    roughness: 0.85, metalness: 0,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.kind = 'dressform'; mesh.renderOrder = -1;
+  group.add(mesh);
+  group.userData.stack = stack; group.userData.body = stack.body;
+  return group;
+}

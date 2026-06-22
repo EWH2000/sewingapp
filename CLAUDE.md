@@ -225,5 +225,23 @@ gains an additive read-only `GET /patterns` list route. **`tools/seed-examples.m
 seeded **id 5 A-line Skirt, id 6 Tank Bodice, id 7 Tank Dress** (curves + darts + seams + body); existing
 bags id 3/id 4 untouched. The seeded bodice tiles to a valid 8-sheet 0-bad-page **true-1:1 Letter PDF**.
 Tests: `verify-editor-geom.mjs` (85) + `verify-seams.mjs` (27) extended, new `tools/preview/verify-lowering.mjs`
-(16); full headless suite green. Starting orders = `HANDOFF-M5-garment.md`. **NEXT: M5b** — `body-form.js`
-parametric dress form (the thing garments hang on), then M5c gravity drape.
+(16); full headless suite green. Starting orders = `HANDOFF-M5-garment.md`.
+
+**M5b / Step-3b parametric DRESS FORM DONE (2026-06-22, owner-gated — "body and form editor work well").**
+A garment preview now shows a translucent **dress form** sized from the doc's `body` measurements, with a
+live **Measurements panel**. New pure `app/static/js/body-form.js` (`window.BodyForm`, no three/DOM/RNG):
+`loft(body,opts)→ringStack` lofts a limbless torso from a stack of **elliptical** rings (wider than deep,
+`ASPECT 0.72`); each band's semi-axis is solved **closed-form** from its target circumference (Ramanujan's
+perimeter approx inverts to a constant `ellipseK(r)` at fixed aspect → re-loft <1 ms), Hermite-interpolated
+over an 8-band silhouette (waist pinch + bust peak); height scales the Y extent, girths stay put; the form's
+hem sits on the floor (y=0). **Analytic collision** (no SMPL/SDF, ready for M5c): `insideForm`,
+`nearestSurface` (horizontal-only push + skin offset), `signedDist`, `ringAt`. `preview3d.js` adds
+`dressFormGeometry`/`dressFormGroup` (translucent pale-muslin `MeshStandardMaterial`, 48×48 + caps, smooth
+normals; **`group.userData.stack` is the SAME stack the M5c solver will collide against** so render + collision
+can't drift). `preview.html` loads body-form.js (classic defer) + a `#pv-measure` plate; `preview.js` builds
+the form for any garment (doc has `body`), frames the form+garment union, and re-lofts live on edit
+(debounced save; the doc is mm, opaque `params_json`). The garment still lies flat (drape onto the form is
+M5c). Tests: `tools/preview/verify-body-form.mjs` (31 — circumferences match measurements, aspect asymmetry
+catches an a/b swap, height scales Y, insideForm/nearestSurface, re-loft, no overshoot, determinism, the
+translucent render); full suite green. **NEXT: M5c** — gravity drape (wrap warm-start, body collision,
+dart self-seams, self-collision, fabric presets) so the garment hangs ON the form.

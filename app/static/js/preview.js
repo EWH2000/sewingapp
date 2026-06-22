@@ -14,13 +14,14 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { docToMesh, panelCanvasTexture, pieceFaceTexture, drapeToGroup, frameObject, contactShadow } from 'preview3d';
+import { docToMesh, panelCanvasTexture, pieceFaceTexture, drapeToGroup, frameObject, contactShadow, dressFormGroup } from 'preview3d';
 
 const BASE = window.SEWING_BASE || '';
 const ident = window.SEWING_PREVIEW || {};
 const UNIT = (() => { try { return localStorage.getItem('sewing.unit') || 'in'; } catch (_) { return 'in'; } })();
 const uSuf = UNIT === 'cm' ? 'cm' : 'in';
 const dim = (mm) => String(Math.round((UNIT === 'cm' ? mm / 10 : mm / 25.4) * 10) / 10);
+const toMm = (v) => (UNIT === 'cm' ? v * 10 : v * 25.4);   // display-unit input → mm (the doc is mm)
 
 const canvas = document.getElementById('preview-canvas');
 const stage = document.getElementById('preview-stage');
@@ -130,18 +131,52 @@ function mountFreeform(pat, ctx) {
   let view = canDrape ? 'inflated' : 'fold';   // inflated is the default when the solver is present
   let detailH = 20;                            // Standard
   let foldRoot = params.foldRoot || null;
+  const hasBody = !!(params.body && window.BodyForm);   // garment → show the dress form (M5b)
 
-  let curGroup = null, curShadow = null;
+  let curGroup = null, curShadow = null, formGroup = null, formShadow = null;
+
+  // (Re)loft the translucent dress form from params.body + seat it on a contact shadow. The
+  // form persists across view toggles; M5c will drape the garment ONTO it (today it stands
+  // behind the still-flat inflated garment). Re-loft is <1 ms, so this is fine to call live.
+  function buildForm() {
+    if (formGroup) { scene.remove(formGroup); formGroup = null; }
+    if (formShadow) { scene.remove(formShadow); formShadow = null; }
+    if (!hasBody) return;
+    formGroup = dressFormGroup(params.body);
+    if (!formGroup.children.length) { formGroup = null; return; }
+    scene.add(formGroup);
+    const st = formGroup.userData.stack, hem = st && st.rings[0];
+    if (hem) { const sh = contactShadow(2 * hem.a, 2 * hem.b); if (sh) { sh.position.y = -2; scene.add(sh); formShadow = sh; } }
+  }
+
+  // Frame the union of the garment + the form so neither is cropped (the form is the taller).
+  function frameUnion() {
+    const box = new THREE.Box3(); let any = false;
+    for (const g of [curGroup, formGroup]) if (g && g.children.length) { box.expandByObject(g); any = true; }
+    if (!any) return;
+    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    const maxSize = Math.max(size.x, size.y, size.z) || 1;
+    const fitH = maxSize / (2 * Math.tan((Math.PI * camera.fov) / 360));
+    const dist = 1.4 * Math.max(fitH, fitH / Math.max(camera.aspect, 0.0001));
+    camera.position.copy(center).addScaledVector(new THREE.Vector3(0.9, 0.55, 1).normalize(), dist);
+    camera.near = Math.max(dist / 1000, 0.1); camera.far = dist * 1000; camera.updateProjectionMatrix();
+    controls.target.copy(center); controls.update();
+  }
+
   function place(group) {
     if (curGroup) { scene.remove(curGroup); curGroup = null; }
     if (curShadow) { scene.remove(curShadow); curShadow = null; }
     if (!group.children.length) return false;
     scene.add(group); curGroup = group;
-    const bb = new THREE.Box3().setFromObject(group);
-    const sz = bb.getSize(new THREE.Vector3());
-    const sh = contactShadow(sz.x, sz.z);
-    if (sh) { sh.position.y = bb.min.y - 2; scene.add(sh); curShadow = sh; }
-    frameObject(camera, controls, group, 1.4);
+    if (formGroup) {
+      frameUnion();   // the form carries its own shadow; frame both together
+    } else {
+      const bb = new THREE.Box3().setFromObject(group);
+      const sz = bb.getSize(new THREE.Vector3());
+      const sh = contactShadow(sz.x, sz.z);
+      if (sh) { sh.position.y = bb.min.y - 2; scene.add(sh); curShadow = sh; }
+      frameObject(camera, controls, group, 1.4);
+    }
     resize();
     return true;
   }
@@ -222,6 +257,30 @@ function mountFreeform(pat, ctx) {
   });
 
   function reveal() { show(specEl, true); show(hintEl, true); show(controlsEl, true); }
+
+  // Measurements panel (M5b): live re-loft on edit, debounced save. Shown only for garments.
+  function setupMeasurements() {
+    const wrap = document.getElementById('pv-measure');
+    if (!hasBody || !wrap) return;
+    const NG = window.PatternGeom;
+    const ids = { heightMm: 'm-height', bustMm: 'm-bust', waistMm: 'm-waist', hipMm: 'm-hip' };
+    const inputs = {};
+    for (const k in ids) { const el = document.getElementById(ids[k]); inputs[k] = el; if (el) el.value = dim(params.body[k]); }
+    wrap.querySelectorAll('.pv-measure__u').forEach((e) => { e.textContent = uSuf; });
+    show(wrap, true);
+    let saveTimer = null;
+    const onEdit = () => {
+      const b = {};
+      for (const k in ids) { const v = parseFloat(inputs[k] && inputs[k].value); b[k] = v > 0 ? toMm(v) : params.body[k]; }
+      params.body = NG && NG.normalizeBody ? NG.normalizeBody(b) : b;
+      buildForm();            // re-loft in place (camera stays put — no jarring re-frame)
+      clearTimeout(saveTimer); saveTimer = setTimeout(() => saveDoc(pat), 700);
+    };
+    for (const k in ids) if (inputs[k]) inputs[k].addEventListener('input', onEdit);
+  }
+
+  buildForm();          // stand the form up before the first frameUnion
+  setupMeasurements();
   renderActive();
 }
 

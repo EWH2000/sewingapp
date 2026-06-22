@@ -14,6 +14,8 @@
   <script src="{{ base_path }}/static/js/vendor/poly2tri.js?v={{ asset_ver }}" defer></script>
   <script src="{{ base_path }}/static/js/pattern-mesh.js?v={{ asset_ver }}" defer></script>
   <script src="{{ base_path }}/static/js/pattern-cloth.js?v={{ asset_ver }}" defer></script>
+  {# M5b parametric dress form (window.BodyForm) — pure, classic defer; preview3d.dressFormGroup reads it. #}
+  <script src="{{ base_path }}/static/js/body-form.js?v={{ asset_ver }}" defer></script>
 
   {# Same injection channel as window.SEWING_EDIT on /edit — id/name/kind only. #}
   <script>window.SEWING_PREVIEW = {{ (pattern or {})|tojson }};</script>
@@ -147,6 +149,31 @@
     .pv-floor__sel:focus { outline: none; border-color: var(--pv-brass); }
     .pv-floor__sel option { color: #1b1d21; }
 
+    /* Measurements panel (M5b) — wearer body dims that size the dress form. Top-left, below
+       the title. Editing re-lofts the form live; the doc stores body in opaque params. */
+    .pv-measure {
+      position: absolute; left: 18px; top: 82px; z-index: 3; width: 178px;
+      padding: 10px 13px 11px; background: var(--pv-plate);
+      -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+      border: 1px solid rgba(255,255,255,0.08); border-top: 2px solid var(--pv-brass);
+      border-radius: 4px; color: var(--pv-paper);
+    }
+    .pv-measure[hidden] { display: none; }
+    .pv-measure__head {
+      font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--pv-muted); margin-bottom: 8px;
+    }
+    .pv-measure__row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+    .pv-measure__row span { flex: 1; color: var(--pv-muted); font-size: 12.5px; }
+    .pv-measure__row input {
+      width: 56px; -webkit-appearance: none; appearance: none; text-align: right;
+      background: rgba(255,255,255,0.06); color: var(--pv-paper);
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 3px;
+      padding: 4px 6px; font-size: 13px; font-variant-numeric: tabular-nums;
+    }
+    .pv-measure__row input:focus { outline: none; border-color: var(--pv-brass); }
+    .pv-measure__row em { font-style: normal; color: var(--pv-muted); font-size: 11px; width: 14px; }
+
     .preview-msg {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       text-align: center; padding: 24px; color: var(--pv-paper); font-size: 15px; line-height: 1.5;
@@ -164,6 +191,15 @@
   <div class="pv-overlay">
     <div class="pv-eyebrow">Assembled preview</div>
     <h1 class="pv-title">{{ pattern.name if pattern else "Preview" }}</h1>
+  </div>
+
+  {# Measurements (M5b) — shown by preview.js for a garment (a doc with `body`); edits re-loft the form. #}
+  <div class="pv-measure" id="pv-measure" hidden>
+    <div class="pv-measure__head">Measurements</div>
+    <label class="pv-measure__row"><span>Height</span><input id="m-height" type="number" inputmode="decimal" step="0.1"><em class="pv-measure__u">in</em></label>
+    <label class="pv-measure__row"><span>Bust</span><input id="m-bust" type="number" inputmode="decimal" step="0.1"><em class="pv-measure__u">in</em></label>
+    <label class="pv-measure__row"><span>Waist</span><input id="m-waist" type="number" inputmode="decimal" step="0.1"><em class="pv-measure__u">in</em></label>
+    <label class="pv-measure__row"><span>Hip</span><input id="m-hip" type="number" inputmode="decimal" step="0.1"><em class="pv-measure__u">in</em></label>
   </div>
 
   {# Floor-piece override (freeform path) — shown by preview.js when a freeform doc folds/drapes. #}
