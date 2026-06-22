@@ -348,3 +348,50 @@ better, commit it").** Three garment-only additions in `pattern-cloth.js` (bag i
   preserves the warning; geomHash re-keys on sc/thick/scw/sm, bag hash byte-identical). Full headless + print-spine
   suites green. **Still next:** the interactive editor authoring UI (curve/dart/notch/measurements on `/edit`);
   revisiting the waist dart on a fitted body.
+
+**INTERACTIVE GARMENT-AUTHORING UI on `/edit` DONE (2026-06-22, owner-gated — "everything checked out").** The
+owner can now **DRAW** garments (curves, darts, notch types, body measurements) instead of only getting them from
+`tools/seed-examples.mjs`. Purely additive UI on `editor.js` + `edit.html` over the schema-3 model M5a already
+lowers to `cut`/`seam` BEFORE the print spine — `pattern-pdf.js`/`printing.py`/calibration gate/SSRF guard
+**byte-identical**, no DB migration, schema stays 2 until a schema-3 field is present. Built MVP-first; each chunk
+owner-gated. Validated by a design + 3-lens adversarial workflow (it caught the sign convention, an undo bug, a
+quad→cubic data-loss trap, board-explosion clamps, and the Bezier-lib bug below).
+- **Foundation:** `pieceGeomCached` key now includes `edges`/`darts` (curve/dart edits were a silent no-op without
+  it). New pure `pattern-geom` exports `worldToEdgeLocal` (exact analytic inverse of `edgeLocalToWorld`),
+  `edgeInwardSign` (per-edge inward sign via the centroid test `loweredBoundary` uses), `reindexEdgeRefs` (retargets
+  a piece's darts/curves/notches on node insert/delete, in lockstep with the seam loop — run before `commit()`),
+  `migrateNotches`. One `setMode()` makes notch/sew/**curve**/**dart** mutually exclusive; `onDown` early-returns in
+  any draw mode (a tap near a corner can't hijack a vertex drag). Fixed a latent **undo bug**: `restore()` did
+  `body = o.body || state.body` → garment-toggle-OFF was un-undoable; now `body = o.body ? normalizeBody : null`.
+  `clampSelection`/`setReadoutForSelection` handle `curve`/`dart`; legacy `{x,y}` notches eager-migrate on load.
+- **Measurements card** (`#ed-measure`): doc-level `heightMm/bustMm/waistMm/hipMm` + a "Garment?" toggle
+  (`state.body` ⇄ `DEFAULT_BODY`/null), display units, immediate write + debounced `commit()`. Lofts the dress form
+  on `/preview`.
+- **Curve drag-handle** (`#ed-curve`): tap a straight edge → `edges[i]={curve:{type:"quad",cp:[0.5, 0.15·inwardSign]}}`
+  (bows **inward** — verified 3 ways; the design agent's `-0.15` was a winding misread); drag the blue dot
+  (`worldToEdgeLocal`, `|v|≤1` clamp so a fat-finger drag can't explode the sheet count); numeric card =
+  depth / Inward-Outward / shape **quad→cubic→arc** (the cycle **resizes `cp` 2↔4** or `cloneEdges` silently drops a
+  malformed cubic) / delete.
+- **Dart placement** (`#ed-dart`): tap an edge → wedge dart; drag the pink apex (**depth-only**, `dartApexLocal`
+  shares `loweredBoundary`'s inward-normal so the handle sits on the printed tip; clamps to `[1, 0.45·L]`); card =
+  width / depth / position / wedge-slash; deleting the last drops the `darts` key (byte-clean).
+- **Notch types:** `handleNotchTap` writes upgraded `{edge,t,type}` (`t` from `ne.proj.t`) and a tap **cycles
+  single→double→remove**; `drawPaths`/`hitNotch` switched to `notchTicks` + the analytic t-point (centered double).
+- **Variable SA:** per-vertex `#ed-sa` field → `node.saMm` (0 drops it), a teal node highlight, and an honest
+  "saved but inactive while this piece has curved edges" warning (the lowering ignores per-node SA when curves
+  exist — `hasVarSA && !hasCurves`; a real geometry project, deferred).
+- **⚠️ THE BUG THAT BLANKED CURVED GARMENTS (fixed):** the vendored `browser.maker.js` ships **without bezier-js**
+  and expects a global `Bezier` script tag that was never added, so constructing any `BezierCurve` threw "Bezier
+  library not found" → `drawPaths` blanked the canvas. Headless tests use **npm `makerjs`** (bundles bezier-js) so
+  they couldn't catch it — only the bodice/dress (curves) broke; skirt/bags (no curves) were fine, so it looked
+  garment-specific. **Latent pre-existing gap** (curved pieces had only ever flattened in Node) the curve UI would
+  also have hit. Fix: vendored `app/static/js/vendor/bezier.js` (bezier-js 2.6.1, the version Maker 0.10.3 wants),
+  loaded **before** `browser.maker.js` in `edit.html`; plus `pieceGeom` now **degrades to straight edges if a curve
+  build throws** (a missing lib can never blank the editor again). New `tools/tiling/verify-vendored-maker.mjs` (7)
+  loads the **real browser Maker stack** (npm tests can't) and asserts curves flatten + the degrade-never-blank
+  fallback. Verified all 5 examples render through the vendored stack.
+- Tests: `verify-editor-geom.mjs` 85→**113** (edge-local inverse round-trip + sign-pin, `reindexEdgeRefs`, cubic cp
+  contract, dart floors/slash, notch-t/migration, SA caveat, body passthrough) + new `verify-vendored-maker.mjs`
+  (7); print-spine sentinels (`verify-browser-gen`, bag `verify-cloth`) byte-identical green; full preview suite
+  green. **Still deferred:** sew-mode refinements (match-notches/ease/gather); the node-delete edge-merge distortion;
+  per-frame curve/dart-drag re-flatten perf (throttle if it lags); revisiting the waist dart on a fitted body.

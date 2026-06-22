@@ -353,5 +353,134 @@ console.log("=== M5a: garment authoring lowers to the print spine ===");
   console.log("  garment authoring lowers cleanly — print spine accepts curves/darts/SA/notches");
 }
 
+console.log("=== Stage 0: edge-local inverse + edgeInwardSign + reindexEdgeRefs + body passthrough ===");
+{
+  const rectNodes = (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+
+  // exports present
+  ok(typeof G.edgeLocalToWorld === "function" && typeof G.worldToEdgeLocal === "function"
+     && typeof G.reindexEdgeRefs === "function" && typeof G.edgeInwardSign === "function"
+     && typeof G.migrateNotches === "function", "new geom helpers exported");
+
+  // forward∘inverse + inverse∘forward identity for a few edges/cp
+  let worst = 0;
+  for (const [a, b] of [[{ x: 10, y: 20 }, { x: 210, y: 20 }], [{ x: 0, y: 0 }, { x: 100, y: 140 }], [{ x: -30, y: 5 }, { x: 12, y: -88 }]]) {
+    for (const [u, v] of [[0.5, 0.2], [0.1, -0.4], [0.9, 0.0], [0.33, 1.0]]) {
+      const Pw = G.edgeLocalToWorld(a, b, u, v);
+      const uv = G.worldToEdgeLocal(a, b, { x: Pw[0], y: Pw[1] });
+      worst = Math.max(worst, Math.abs(uv[0] - u), Math.abs(uv[1] - v));
+      const w = { x: a.x + 0.4 * (b.x - a.x) - 7, y: a.y + 0.4 * (b.y - a.y) + 13 };   // raw world pt
+      const back = G.edgeLocalToWorld(a, b, ...G.worldToEdgeLocal(a, b, w));
+      worst = Math.max(worst, Math.abs(back[0] - w.x), Math.abs(back[1] - w.y));
+    }
+  }
+  ok(worst < 1e-9, `edge-local forward/inverse round-trip worst ${worst.toExponential(2)}`);
+
+  // inward sign: CCW rect top edge → +1, and a curve with that sign dips the apex toward the interior
+  const rn = rectNodes(200, 300);
+  ok(G.edgeInwardSign(rn, 2) === 1, "CCW rect top-edge inward sign = +1 (positive v bows inward)");
+  const inwardCurve = { id: "p", name: "C", count: 1, closed: true, nodes: rn,
+    edges: { "2": { curve: { type: "quad", cp: [0.5, 0.15 * G.edgeInwardSign(rn, 2)] } } } };
+  const apexY = Math.min(...G.pieceGeom(inwardCurve).cut.filter((p) => p[0] > 60 && p[0] < 140).map((p) => p[1]));
+  ok(apexY < 300 - 5, `sign-pin: inward curve apex dips below the chord (${apexY.toFixed(1)} < 300)`);
+
+  // reindexEdgeRefs — a piece with a curve + dart + notch all on edge 2
+  const mk = () => ({ id: "p", nodes: rectNodes(200, 300),
+    edges: { "2": { curve: { type: "quad", cp: [0.5, 0.2] } } },
+    darts: [{ id: "d1", edge: 2, center: 0.5, width: 20, depth: 40, kind: "wedge" }],
+    notches: [{ edge: 2, t: 0.5, type: "single" }] });
+  let pc = mk(); G.reindexEdgeRefs(pc, { kind: "insert", ei: 0 });
+  ok(Object.keys(pc.edges)[0] === "3" && pc.darts[0].edge === 3 && pc.notches[0].edge === 3, "insert upstream shifts curve+dart+notch 2→3");
+  pc = mk(); G.reindexEdgeRefs(pc, { kind: "insert", ei: 2 });
+  ok(pc.edges["2"] && pc.darts[0].edge === 2 && pc.notches[0].edge === 2, "insert ON the edge keeps it at 2");
+  pc = mk(); G.reindexEdgeRefs(pc, { kind: "delete", k: 0 });
+  ok(pc.edges["1"] && pc.darts[0].edge === 1 && pc.notches[0].edge === 1, "delete upstream shifts 2→1");
+  pc = mk(); G.reindexEdgeRefs(pc, { kind: "delete", k: 2 });
+  ok(Object.keys(pc.edges).length === 0 && pc.darts.length === 0 && pc.notches.length === 0, "delete the edge drops curve+dart+notch on it");
+  // reindexed refs survive normalizePieces (the exact restore() path)
+  pc = mk(); G.reindexEdgeRefs(pc, { kind: "insert", ei: 0 });
+  const cloned = G.normalizePieces({ pieces: [pc] })[0];
+  ok(cloned.edges && cloned.edges["3"] && cloned.darts[0].edge === 3 && cloned.notches[0].edge === 3, "reindexed refs survive normalizePieces");
+
+  // BODY passthrough (toggleGarment's two states) — on → schema 3 + defaults; off → schema 2, no body
+  const onDoc = G.freeformToDoc({ name: "G", pieces: [{ name: "P", nodes: rectNodes(200, 200) }], body: Object.assign({}, G.DEFAULT_BODY) });
+  ok(onDoc.schema === 3 && onDoc.body && onDoc.body.heightMm === 1650, "garment ON → schema 3 + body defaults");
+  const offDoc = G.freeformToDoc({ name: "B", pieces: [{ name: "P", nodes: rectNodes(200, 200) }] });
+  ok(offDoc.schema === 2 && !offDoc.body, "garment OFF → schema 2, no body");
+  console.log("  Stage 0 + body OK");
+}
+
+console.log("=== M2: curve cp contract (cloneEdges) + cubic lowering ===");
+{
+  const rectNodes = (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+  // a UI-shaped cubic (4 cp) survives normalizePieces
+  const cub = G.normalizePieces({ pieces: [{ id: "p", nodes: rectNodes(200, 300),
+    edges: { "2": { curve: { type: "cubic", cp: [0.33, 0.2, 0.67, 0.2] } } } }] })[0];
+  ok(cub.edges && cub.edges["2"] && cub.edges["2"].curve.type === "cubic" && cub.edges["2"].curve.cp.length === 4,
+     "valid cubic (4 cp) survives normalizePieces");
+  // a malformed cubic (2 cp) is DROPPED (cloneEdges needs >=4) — the editor's type-cycle MUST resize to avoid this
+  const bad = G.normalizePieces({ pieces: [{ id: "p", nodes: rectNodes(200, 300),
+    edges: { "2": { curve: { type: "cubic", cp: [0.5, 0.2] } } } }] })[0];
+  ok(!bad.edges, "malformed cubic (2 cp) is dropped — the contract the type-cycle must honor");
+  // a cubic curve lowers + tiles
+  await assertPages((await P.makeTiledPdf(G.freeformToDoc({ name: "Cubic", pieces: [{ id: "p", name: "C", count: 1, closed: true, nodes: rectNodes(200, 300), edges: { "2": { curve: { type: "cubic", cp: [0.3, 0.18, 0.7, 0.18] } } } }] }))).bytes, "cubic curve → tiler");
+  console.log("  M2 curve contract OK");
+}
+
+console.log("=== M3: dart placement contract (clonePiece floors + slash + cleanliness) ===");
+{
+  const rectNodes = (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+  const wedge = (edge, extra) => ({ id: "d1", edge, center: 0.5, width: 26, depth: 90, kind: "wedge", ...extra });
+  // a default dart on edge n-1 (edge 3) survives normalizePieces (not silently filtered)
+  const onLast = G.normalizePieces({ pieces: [{ id: "p", nodes: rectNodes(200, 300), darts: [wedge(3)] }] })[0];
+  ok(onLast.darts && onLast.darts.length === 1 && onLast.darts[0].edge === 3, "dart on edge n-1 survives normalizePieces");
+  // width 0.5 → floored to 1 (matches the editor's wireDart clamp, so no undo snap)
+  const tiny = G.normalizePieces({ pieces: [{ id: "p", nodes: rectNodes(200, 300), darts: [wedge(0, { width: 0.5 })] }] })[0];
+  ok(tiny.darts[0].width === 1, `clonePiece floors width 0.5 → 1 (${tiny.darts[0].width})`);
+  // slash dart → fold guide, NO extra cut points (rect stays 5 cut pts)
+  const slashPiece = { id: "p", nodes: rectNodes(200, 300), darts: [{ id: "d1", edge: 0, center: 0.5, width: 26, depth: 90, kind: "slash" }] };
+  ok(G.pieceGeom(slashPiece).cut.length === 5, `slash dart adds no cut points (${G.pieceGeom(slashPiece).cut.length})`);
+  ok(G.loweredBoundary(slashPiece).dartFolds.length === 1, "slash dart emits a fold guide");
+  await assertPages((await P.makeTiledPdf(G.freeformToDoc({ name: "Slash", pieces: [{ id: "p", name: "S", count: 1, closed: true, ...slashPiece }] }))).bytes, "slash dart → tiler");
+  // a piece with no darts → schema 2, no darts key (deleteDart drops the empty array to keep it byte-clean)
+  const noDart = G.freeformToDoc({ name: "Plain", pieces: [{ id: "p", name: "P", nodes: rectNodes(200, 200) }] });
+  ok(noDart.schema === 2 && !noDart.pieces[0].darts, "piece with no darts → schema 2, no darts key");
+  console.log("  M3 dart contract OK");
+}
+
+console.log("=== M4: notch upgrade (t = nearestEdge.proj.t + migration + double) ===");
+{
+  const ns = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 0, y: 100 }];
+  // the t the editor stores on tap == nearestEdge(...).proj.t
+  const ne = G.nearestEdge(ns, { x: 100, y: -3 });
+  ok(ne.edge === 0 && approx(ne.proj.t, 0.5, 1e-9), `notch t = projection t on edge 0 (${ne.edge}, ${ne.proj.t})`);
+  // migrateNotches: legacy {x,y} → {edge,t,type} matching nearestEdge
+  const pc = { id: "p", nodes: ns, notches: [{ x: 150, y: 0 }] };
+  G.migrateNotches(pc);
+  ok(pc.notches[0].edge === 0 && approx(pc.notches[0].t, 0.75, 0.01) && pc.notches[0].type === "single",
+     `legacy notch migrates to edge 0 t≈0.75 (${pc.notches[0].edge}, ${pc.notches[0].t})`);
+  ok(G.notchTicks(ns, pc.notches[0]).length === 1, "migrated single → 1 tick");
+  ok(G.notchTicks(ns, { edge: 1, t: 0.3, type: "double" }).length === 2, "double → 2 ticks");
+  // a mixed-shape piece preserves BOTH notch shapes through normalizePieces (the restore() path)
+  const mixed = G.normalizePieces({ pieces: [{ id: "p", nodes: ns, notches: [{ x: 150, y: 0 }, { edge: 1, t: 0.3, type: "double" }] }] })[0];
+  ok(mixed.notches.length === 2 && mixed.notches[1].type === "double", "mixed legacy + upgraded notches both survive");
+  console.log("  M4 notch upgrade OK");
+}
+
+console.log("=== M5: variable SA round-trip + curves-vs-SA caveat ===");
+{
+  // saMm:0 drops on clone (schema-2 byte-clean); saMm:25 round-trips
+  const cl = G.normalizePieces({ pieces: [{ id: "p", nodes: [{ x: 0, y: 0, saMm: 0 }, { x: 200, y: 0 }, { x: 200, y: 100, saMm: 25 }, { x: 0, y: 100 }] }] })[0];
+  ok(cl.nodes[0].saMm === undefined && cl.nodes[2].saMm === 25, "saMm:0 drops, saMm:25 round-trips");
+  // a piece with BOTH curves AND node.saMm>0 → seam uses the UNIFORM Maker outline, NOT the per-node split
+  const both = G.pieceGeom({ id: "p", seamMm: 10, closed: true,
+    nodes: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 300, saMm: 30 }, { x: 0, y: 300, saMm: 30 }],
+    edges: { "0": { curve: { type: "quad", cp: [0.5, 0.1] } } } });
+  ok(!!both.seam, "curved piece with variable SA still produces a seam line");
+  const sb = G.bbox(both.seam);
+  ok(approx(sb.maxY, 290, 2), `curves present → UNIFORM SA (top inset ~10 not 30): maxY ${sb.maxY.toFixed(1)} (would be ~270 if variable applied)`);
+  console.log("  M5 variable SA caveat OK");
+}
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

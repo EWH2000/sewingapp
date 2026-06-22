@@ -41,7 +41,7 @@
   const state = {
     id: null, name: "", kind: "freeform",
     pieces: [], active: 0,                 // each {id,name,count,seamMm,cornerRadius,closed,nodes,notches,placements,layout}
-    snapOn: true, notchMode: false, sewMode: false, unit: "in", gridMm: 5,
+    snapOn: true, notchMode: false, sewMode: false, curveMode: false, dartMode: false, unit: "in", gridMm: 5,
     seams: [],                            // schema-3 seam graph: {id, a:{piece,edge}, b:{piece,edge}, foldAngle, anchors}
     body: null,                           // schema-3 doc-level wearer measurements {heightMm,bustMm,waistMm,hipMm}
     sewPending: null,                     // {piece:<id>, edge} — the first edge tapped, awaiting its pair
@@ -50,6 +50,9 @@
     history: [], hindex: -1,
   };
   const SEW = "#6b57c9";   // seam connectors / sew-mode affordances (a calm violet, distinct on paper)
+  const CURVEC = "#2f7de0";   // curve control dots (a clear blue, distinct from the orange corners)
+  const DARTC = "#c0398a";    // dart apex handle (a magenta, distinct from curves + corners)
+  const SAC = "#0e9aa7";      // a corner with a custom (variable) seam allowance (teal)
   const ZERO = { x: 0, y: 0 };
   const activePiece = () => state.pieces[state.active] || null;
   const layoutOf = (p) => (p && p.layout) ? p.layout : ZERO;
@@ -204,7 +207,7 @@
     if (rafPending) return; rafPending = true;
     requestAnimationFrame(() => { rafPending = false; render(); });
   }
-  function render() { applyCamera(); drawGrid(); computeOverlaps(); drawPaths(); drawOverlay(); renderPieceList(); renderSeamList(); updateNumericPanel(); updateButtons(); }
+  function render() { applyCamera(); drawGrid(); computeOverlaps(); drawPaths(); drawOverlay(); renderPieceList(); renderSeamList(); renderMeasureCard(); updateNumericPanel(); updateButtons(); }
   function applyCamera() { geoG.setAttribute("transform", G.cameraMatrix(state.cam)); }
 
   function drawGrid() {
@@ -233,7 +236,9 @@
   // piece object → its signature, so pan/zoom never re-runs Maker.js.
   const geomCacheMap = new Map();
   function pieceGeomCached(p) {
-    const key = JSON.stringify({ n: p.nodes, r: p.cornerRadius || 0, s: p.seamMm || 0, c: p.closed });
+    // include edges (curves) + darts so adding/editing one busts the stale geometry cache and re-renders.
+    // (per-node saMm is already covered — it lives inside p.nodes.)
+    const key = JSON.stringify({ e: p.edges || null, d: p.darts || null, n: p.nodes, r: p.cornerRadius || 0, s: p.seamMm || 0, c: p.closed });
     const c = geomCacheMap.get(p);
     if (c && c.key === key) return c;
     const g = G.pieceGeom(p);
@@ -259,8 +264,8 @@
         s += `<polygon points="${pts}" fill="none" stroke="${sel ? SEL : SEAMC}" stroke-width="${sel ? 2 : 1.3}" opacity="${op}" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>`;
       });
       for (const nt of p.notches) {
-        const m = G.notchMark(p.nodes, nt);
-        if (m) s += `<line x1="${m[0][0] + L.x}" y1="${m[0][1] + L.y}" x2="${m[1][0] + L.x}" y2="${m[1][1] + L.y}" stroke="${act ? INK : DIM}" stroke-width="1.6" opacity="${op}" vector-effect="non-scaling-stroke"/>`;
+        for (const m of G.notchTicks(p.nodes, nt))   // upgraded {edge,t,type} → 1 (single) or 2 (double) ticks; legacy {x,y} → 1
+          s += `<line x1="${m[0][0] + L.x}" y1="${m[0][1] + L.y}" x2="${m[1][0] + L.x}" y2="${m[1][1] + L.y}" stroke="${act ? INK : DIM}" stroke-width="1.6" opacity="${op}" vector-effect="non-scaling-stroke"/>`;
       }
     }
     pathsG.innerHTML = s;
@@ -296,13 +301,41 @@
         const sel = state.selection.type === "placement" && state.selection.index === i;
         eSvg += labelTag(c.sx, c.sy + 4, pl.label || "Pocket", sel ? SEL : SEAMC);
       });
-      if (!state.sewMode) {   // corner handles are for editing; hide them while sewing
+      if (!state.sewMode && !state.curveMode && !state.dartMode) {   // corner handles: editing only — hide in sew/curve/dart modes
         for (let i = 0; i < n; i++) {
           const s = W2S(aB(ns[i]));
           const isSel = state.selection.type === "vertex" && state.selection.index === i;
           if (isSel) hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="11" fill="none" stroke="${SEL}" stroke-width="2"/>`;
-          hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="6.5" fill="${ACCENT}" stroke="#fff" stroke-width="1.6"/>`;
+          hSvg += `<circle cx="${s.sx}" cy="${s.sy}" r="6.5" fill="${ns[i].saMm > 0 ? SAC : ACCENT}" stroke="#fff" stroke-width="1.6"/>`;
         }
+      }
+      // curve control dots — only in curve mode (so they never steal a corner drag elsewhere)
+      if (state.curveMode && ap.edges) {
+        for (const k of Object.keys(ap.edges)) {
+          const i = parseInt(k, 10); if (!(i >= 0 && i < n)) continue;
+          const c = ap.edges[k].curve; if (!c || !Array.isArray(c.cp)) continue;
+          const a = ns[i], b = ns[(i + 1) % n];
+          const isSel = state.selection.type === "curve" && state.selection.index === i;
+          const mid = W2S(aB({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }));
+          for (const sl of (c.type === "cubic" ? [0, 2] : [0])) {
+            const wl = G.edgeLocalToWorld(a, b, c.cp[sl], c.cp[sl + 1]);
+            const dot = W2S(aB({ x: wl[0], y: wl[1] }));
+            hSvg += `<line x1="${mid.sx}" y1="${mid.sy}" x2="${dot.sx}" y2="${dot.sy}" stroke="${CURVEC}" stroke-width="1.2" opacity="0.5"/>`;
+            if (isSel) hSvg += `<circle cx="${dot.sx}" cy="${dot.sy}" r="12" fill="none" stroke="${SEL}" stroke-width="2"/>`;
+            hSvg += `<circle cx="${dot.sx}" cy="${dot.sy}" r="8" fill="${CURVEC}" stroke="#fff" stroke-width="1.6"/>`;
+          }
+        }
+      }
+      // dart apex handles — only in dart mode (a dashed centerline base→apex + the draggable tip)
+      if (state.dartMode && ap.darts) {
+        ap.darts.forEach((d, i) => {
+          const apex = dartApexLocal(ap, d); if (!apex) return;
+          const base = W2S(aB(apex.base)), tip = W2S(aB(apex));
+          const isSel = state.selection.type === "dart" && state.selection.index === i;
+          eSvg += `<line x1="${base.sx}" y1="${base.sy}" x2="${tip.sx}" y2="${tip.sy}" stroke="${DARTC}" stroke-width="1.4" stroke-dasharray="4 3" opacity="0.85"/>`;
+          if (isSel) hSvg += `<circle cx="${tip.sx}" cy="${tip.sy}" r="12" fill="none" stroke="${SEL}" stroke-width="2"/>`;
+          hSvg += `<circle cx="${tip.sx}" cy="${tip.sy}" r="8" fill="${DARTC}" stroke="#fff" stroke-width="1.6"/>`;
+        });
       }
     }
     eSvg += seamOverlaySvg();
@@ -411,6 +444,43 @@
   }
   function autoArrange() { G.packLayouts(state.pieces); commit(); fitAll(); render(); }
 
+  // ── body measurements card (doc-level; lofts the dress form on /preview) ──────
+  // state.body is null for bags, or {heightMm,bustMm,waistMm,hipMm} for garments. The document is
+  // always mm; we show display units. Writes land immediately (so a quick save/undo sees them) and
+  // history commits are debounced so a run of keystrokes is one undo step — NO render() in the
+  // debounce (it would innerHTML-replace the input and blur it mid-type; preview.js avoids this too).
+  let bodyTimer = null;
+  function renderMeasureCard() {
+    updateMeasureChip();
+    const box = $("#ed-measure-body"); if (!box) return;
+    if (!state.body) {
+      box.innerHTML = `<div class="empty">Not a garment — bags don't need a wearer. Tap “Garment?” to add measurements for the 3D fit preview.</div>`;
+      return;
+    }
+    const row = (id, label, mm) => `<label class="fld" style="margin:0"><span>${label} (${unitShort()})</span>`
+      + `<input type="number" id="${id}" inputmode="decimal" step="any" min="0" value="${fmtVal(mm)}"></label>`;
+    box.innerHTML =
+      `<div class="grid2">${row("ed-m-height", "Height", state.body.heightMm)}${row("ed-m-bust", "Bust", state.body.bustMm)}</div>`
+      + `<div class="grid2" style="margin-top:8px">${row("ed-m-waist", "Waist", state.body.waistMm)}${row("ed-m-hip", "Hip", state.body.hipMm)}</div>`;
+    const bind = (id, key) => {
+      const el = $("#" + id); if (!el) return;
+      el.addEventListener("input", () => {
+        const v = toMm(parseFloat(el.value));
+        if (!isFinite(v) || v <= 0) return;             // keep the prior value on an empty/transient entry
+        if (!state.body) return;
+        state.body[key] = G.round2(v);
+        clearTimeout(bodyTimer); bodyTimer = setTimeout(() => commit(), 400);
+      });
+    };
+    bind("ed-m-height", "heightMm"); bind("ed-m-bust", "bustMm");
+    bind("ed-m-waist", "waistMm"); bind("ed-m-hip", "hipMm");
+  }
+  function updateMeasureChip() { const c = $("#ed-garment-chip"); if (c) c.classList.toggle("on", !!state.body); }
+  function toggleGarment() {
+    state.body = state.body ? null : Object.assign({}, G.DEFAULT_BODY);   // shallow copy — never mutate the shared constant
+    commit(); render();
+  }
+
   // ── numeric panel ──────────────────────────────────────────────────────────
   function updateNumericPanel() {
     const box = $("#ed-numeric"); if (!box) return;
@@ -425,8 +495,12 @@
         + `<label class="fld" style="margin:0"><span>Y</span><input type="number" id="ed-y" inputmode="decimal" step="any" value="${fmtVal(n.y)}"></label>`
         + `</div>`
         + `<label class="fld" style="margin:.4rem 0 0"><span>Round this corner (${unitShort()}) — 0 = use piece default</span>`
-        + `<input type="number" id="ed-radius" inputmode="decimal" step="any" min="0" value="${fmtVal(n.radius || 0)}"></label>`;
-      wireNumeric(["#ed-x", "#ed-y", "#ed-radius"]);
+        + `<input type="number" id="ed-radius" inputmode="decimal" step="any" min="0" value="${fmtVal(n.radius || 0)}"></label>`
+        + `<label class="fld" style="margin:.4rem 0 0"><span>Seam allowance at this corner (${unitShort()}) — 0 = use piece default</span>`
+        + `<input type="number" id="ed-sa" inputmode="decimal" step="any" min="0" value="${fmtVal(n.saMm || 0)}"></label>`
+        + ((activePiece() && activePiece().edges && Object.keys(activePiece().edges).length)
+          ? `<p class="small" style="color:var(--warn);margin:.2rem 0 0">Custom corner allowance is saved but inactive while this piece has curved edges — the uniform seam allowance is used instead.</p>` : "");
+      wireNumeric(["#ed-x", "#ed-y", "#ed-radius", "#ed-sa"]);
     } else if (sel.type === "edge") {
       const i = sel.index, n = ns.length, a = ns[i], b = ns[(i + 1) % n], j = (i + 1) % n;
       box.innerHTML =
@@ -445,9 +519,110 @@
         + `</div>`
         + `<button class="btn small btn--ghost btn--block" data-action="ed-del-place" style="margin-top:10px">Remove guide</button>`;
       wirePlacement();
+    } else if (sel.type === "curve" && activePiece() && activePiece().edges && activePiece().edges[String(sel.index)]) {
+      const i = sel.index, n = ns.length, a = ns[i], b = ns[(i + 1) % n], chord = G.edgeLength(a, b);
+      const c = activePiece().edges[String(i)].curve;
+      const inSign = G.edgeInwardSign(ns, i), isInward = (c.cp[1] || 0) * inSign >= 0;
+      const typeLabel = c.type === "cubic" ? "S-curve" : c.type === "arc" ? "Arc" : "Simple";
+      const sideBtn = (lbl, key, on) => `<button class="btn small editor__toggle${on ? " on" : ""}" data-action="ed-curve-side" data-side="${key}">${lbl}</button>`;
+      box.innerHTML =
+        `<div class="row row--between"><strong>Curve on edge ${i + 1}</strong><span class="small muted">${unitLabel()}</span></div>`
+        + `<label class="fld" style="margin:.4rem 0 0"><span>Bow depth (${unitShort()})</span>`
+        + `<input type="number" id="ed-curve-depth" inputmode="decimal" step="any" min="0" value="${fmtVal(Math.abs(c.cp[1] || 0) * chord)}"></label>`
+        + `<div class="btnrow" style="margin-top:8px">${sideBtn("Inward", "in", isInward)}${sideBtn("Outward", "out", !isInward)}</div>`
+        + `<button class="btn small btn--ghost btn--block" data-action="ed-curve-type" style="margin-top:8px">Shape: ${typeLabel} (tap to change)</button>`
+        + (c.type === "cubic" ? `<p class="small muted" style="margin:.3rem 0 0">Drag the second blue dot to shape the S-curve.</p>` : "")
+        + `<button class="btn small btn--ghost btn--block" data-action="ed-del-curve" style="margin-top:8px">Remove curve</button>`;
+      wireCurve();
+    } else if (sel.type === "dart" && activePiece() && (activePiece().darts || [])[sel.index]) {
+      const ap = activePiece(), d = ap.darts[sel.index], n = ap.nodes.length;
+      const chord = G.edgeLength(ap.nodes[d.edge], ap.nodes[(d.edge + 1) % n]);
+      const kindBtn = (lbl, key) => `<button class="btn small editor__toggle${d.kind === key ? " on" : ""}" data-action="ed-dart-kind" data-kind="${key}">${lbl}</button>`;
+      box.innerHTML =
+        `<div class="row row--between"><strong>Dart</strong><span class="small muted">${unitLabel()}</span></div>`
+        + `<div class="grid2">`
+        + `<label class="fld" style="margin:0"><span>Width (${unitShort()})</span><input type="number" id="ed-dart-width" inputmode="decimal" step="any" min="0" value="${fmtVal(d.width)}"></label>`
+        + `<label class="fld" style="margin:0"><span>Depth (${unitShort()})</span><input type="number" id="ed-dart-depth" inputmode="decimal" step="any" min="0" value="${fmtVal(d.depth)}"></label>`
+        + `</div>`
+        + `<label class="fld" style="margin:.4rem 0 0"><span>Position along edge ${d.edge + 1} (${unitShort()})</span>`
+        + `<input type="number" id="ed-dart-center" inputmode="decimal" step="any" min="0" value="${fmtVal(d.center * chord)}"></label>`
+        + `<div class="btnrow" style="margin-top:8px">${kindBtn("Wedge (cut)", "wedge")}${kindBtn("Slash (fold)", "slash")}</div>`
+        + `<button class="btn small btn--ghost btn--block" data-action="ed-del-dart" style="margin-top:8px">Remove dart</button>`;
+      wireDart();
     } else {
       box.innerHTML = `<div class="empty">Tap a piece to edit it · drag a piece to move it · tap a corner or edge to adjust.</div>`;
     }
+  }
+  function wireDart() {
+    const ap = activePiece(); if (!ap || !ap.darts) return;
+    const d = ap.darts[state.selection.index]; if (!d) return;
+    const n = ap.nodes.length, chord = G.edgeLength(ap.nodes[d.edge], ap.nodes[(d.edge + 1) % n]) || 1;
+    const bind = (id, fn) => {
+      const el = $(id); if (!el) return;
+      const go = () => { const v = toMm(parseFloat(el.value)); if (isFinite(v)) { fn(v); commit(); render(); } };
+      el.addEventListener("change", go);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); el.blur(); } });
+    };
+    bind("#ed-dart-width", (v) => { d.width = Math.max(1, G.round2(v)); });   // match clonePiece's floor (no undo snap)
+    bind("#ed-dart-depth", (v) => { d.depth = Math.max(1, G.round2(v)); });
+    bind("#ed-dart-center", (v) => { const m = Math.min(0.49, d.width / (2 * chord)); d.center = clamp(G.round2(v / chord), m, 1 - m); });
+  }
+  function setDartKind(k) {
+    if (state.selection.type !== "dart") return;
+    const ap = activePiece(), d = ap && ap.darts && ap.darts[state.selection.index]; if (!d) return;
+    d.kind = k === "slash" ? "slash" : "wedge"; commit(); render();
+  }
+  function deleteDart() {
+    if (state.selection.type !== "dart") return;
+    const ap = activePiece(); if (!ap || !ap.darts) return;
+    ap.darts.splice(state.selection.index, 1);
+    if (!ap.darts.length) delete ap.darts;   // keep schema-2 byte-clean when the last dart goes
+    select("none", -1); commit(); render();
+  }
+  function wireCurve() {
+    const ap = activePiece(); if (!ap || !ap.edges) return;
+    const i = state.selection.index, e = ap.edges[String(i)], c = e && e.curve; if (!c) return;
+    const ns = ap.nodes, n = ns.length, chord = G.edgeLength(ns[i], ns[(i + 1) % n]) || 1;
+    const el = $("#ed-curve-depth"); if (!el) return;
+    const go = () => {
+      const v = toMm(parseFloat(el.value));
+      if (!isFinite(v) || v < 0) return;
+      const curSign = (c.cp[1] || 0) * G.edgeInwardSign(ns, i) >= 0 ? G.edgeInwardSign(ns, i) : -G.edgeInwardSign(ns, i);
+      c.cp[1] = G.round2(clamp((v / chord) * curSign, -1, 1));   // depth edits the PRIMARY handle only (cubic 2nd is dragged)
+      commit(); render();
+    };
+    el.addEventListener("change", go);
+    el.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); go(); el.blur(); } });
+  }
+  // curve numeric-card actions (routed via data-action). type cycle resizes cp so cloneEdges keeps it.
+  function cycleCurveType() {
+    if (state.selection.type !== "curve") return;
+    const ap = activePiece(); if (!ap || !ap.edges) return;
+    const i = state.selection.index, e = ap.edges[String(i)], c = e && e.curve; if (!c) return;
+    const order = ["quad", "cubic", "arc"], next = order[(order.indexOf(c.type) + 1) % order.length] || "quad";
+    if (next === "cubic" && c.cp.length < 4) {
+      const u = c.cp[0], v = c.cp[1];   // extend [u,v] → a valid 4-tuple (cloneEdges drops a cubic with <4 cp)
+      c.cp = [G.round2(u * 0.66), v, G.round2(u + (1 - u) * 0.34), v];
+    } else if (next !== "cubic" && c.cp.length > 2) {
+      c.cp = c.cp.slice(0, 2);          // back to [u,v]
+    }
+    c.type = next; commit(); render();
+  }
+  function setCurveSide(side) {
+    if (state.selection.type !== "curve") return;
+    const ap = activePiece(); if (!ap || !ap.edges) return;
+    const i = state.selection.index, e = ap.edges[String(i)], c = e && e.curve; if (!c) return;
+    const want = (side === "in" ? 1 : -1) * G.edgeInwardSign(ap.nodes, i);
+    c.cp[1] = G.round2((Math.abs(c.cp[1] || 0) || 0.15) * want);
+    if (c.type === "cubic" && c.cp.length >= 4) c.cp[3] = G.round2((Math.abs(c.cp[3] || 0) || 0.15) * want);
+    commit(); render();
+  }
+  function deleteCurve() {
+    if (state.selection.type !== "curve") return;
+    const ap = activePiece(); if (!ap || !ap.edges) return;
+    delete ap.edges[String(state.selection.index)];
+    if (!Object.keys(ap.edges).length) delete ap.edges;   // keep schema-2 byte-clean when the last curve goes
+    select("none", -1); commit(); render();
   }
   function wirePlacement() {
     const ap = activePiece(); if (!ap) return;
@@ -478,6 +653,8 @@
       ns[sel.index].x = G.round2(x); ns[sel.index].y = G.round2(y);
       const rEl = $("#ed-radius");
       if (rEl) { const r = toMm(parseFloat(rEl.value)); ns[sel.index].radius = isFinite(r) && r > 0 ? G.round2(r) : 0; }
+      const saEl = $("#ed-sa");
+      if (saEl) { const sv = toMm(parseFloat(saEl.value)); ns[sel.index].saMm = isFinite(sv) && sv > 0 ? G.round2(sv) : 0; }   // 0 drops the field via clonePiece (schema-2 byte-clean)
       commit(); render();
     } else if (sel.type === "edge" && $("#ed-len")) {
       const L = toMm(parseFloat($("#ed-len").value));
@@ -495,12 +672,19 @@
   function select(type, index) { state.selection = { type, index }; setReadoutForSelection(); }
   function clampSelection() {
     const s = state.selection, ap = activePiece();
+    if (s.type === "none") return;
+    if (s.type === "curve") {   // index is a sparse edge key (node-start index), not a dense range
+      const ok = ap && ap.edges && ap.edges[String(s.index)] && s.index < ap.nodes.length;
+      if (!ok) state.selection = { type: "none", index: -1 };
+      return;
+    }
     let max;
     if (s.type === "seam") max = state.seams.length;
     else if (s.type === "vertex" || s.type === "edge") max = ap ? ap.nodes.length : 0;
     else if (s.type === "placement") max = ap ? ap.placements.length : 0;
+    else if (s.type === "dart") max = ap ? (ap.darts || []).length : 0;
     else max = 0;
-    if (s.type !== "none" && (s.index < 0 || s.index >= max)) state.selection = { type: "none", index: -1 };
+    if (s.index < 0 || s.index >= max) state.selection = { type: "none", index: -1 };
   }
   function setReadout(t) { if (readoutEl) readoutEl.textContent = t || ""; }
   function setReadoutForSelection() {
@@ -514,6 +698,12 @@
     } else if (s.type === "seam" && state.seams[s.index]) {
       const sm = state.seams[s.index], an = pieceById(sm.a.piece), bn = pieceById(sm.b.piece);
       setReadout(`seam: ${an ? an.name : "?"} ↔ ${bn ? bn.name : "?"}`);
+    } else if (s.type === "dart" && activePiece() && (activePiece().darts || [])[s.index]) {
+      const d = activePiece().darts[s.index]; setReadout(`dart: ${fmtVal(d.width)} × ${fmtVal(d.depth)} ${unitShort()}`);
+    } else if (s.type === "curve" && activePiece() && activePiece().edges && activePiece().edges[String(s.index)]) {
+      const i = s.index, n = ns.length, c = activePiece().edges[String(i)].curve;
+      const depth = Math.abs((c.cp && c.cp[1]) || 0) * G.edgeLength(ns[i], ns[(i + 1) % n]);
+      setReadout(`curve on edge ${i + 1}: depth ${fmtLen(depth)}`);
     } else setReadout("");
   }
 
@@ -534,10 +724,13 @@
     if (!state.pieces.length) state.pieces = [G.rectPiece("Piece 1", 300, 400)];
     ensurePieceIds();
     state.seams = G.normalizeSeams(o.seams || [], state.pieces);   // drop any refs the undo invalidated
-    state.body = o.body || state.body || null;
+    // body must reflect the snapshot exactly (NOT fall back to the live body) or toggling the garment
+    // OFF can't be undone — a snapshot with no body legitimately means "not a garment".
+    state.body = o.body ? G.normalizeBody(o.body) : null;
     state.active = Math.min(o.active || 0, state.pieces.length - 1);
     state.name = o.name || ""; if (nameInput) nameInput.value = state.name;
     clampSelection();
+    setReadoutForSelection();   // so undo doesn't leave a stale/lying readout
     render();
   }
   function undo() { if (state.hindex > 0) { state.hindex--; restore(state.history[state.hindex]); } }
@@ -576,12 +769,22 @@
     }
     return -1;
   }
+  // notch center in LOCAL coords — the analytic t-point for an upgraded notch (centered for a double),
+  // else the legacy {x,y}'s projection onto the nearest edge.
+  function notchCenterLocal(ap, nt) {
+    const ns = ap.nodes, n = ns.length;
+    if (Number.isInteger(nt.edge) && nt.edge >= 0 && nt.edge < n) {
+      const a = ns[nt.edge], b = ns[(nt.edge + 1) % n], t = Math.max(0, Math.min(1, nt.t || 0));
+      return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+    }
+    const m = G.notchMark(ns, nt); return m ? { x: (m[0][0] + m[1][0]) / 2, y: (m[0][1] + m[1][1]) / 2 } : null;
+  }
   function hitNotch(p) {
     const ap = activePiece(); if (!ap) return -1;
     const L = activeLayout(); let best = -1, bestD = 18;
     for (let i = 0; i < ap.notches.length; i++) {
-      const m = G.notchMark(ap.nodes, ap.notches[i]); if (!m) continue;
-      const s = W2S({ x: (m[0][0] + m[1][0]) / 2 + L.x, y: (m[0][1] + m[1][1]) / 2 + L.y });
+      const c = notchCenterLocal(ap, ap.notches[i]); if (!c) continue;
+      const s = W2S({ x: c.x + L.x, y: c.y + L.y });
       const d = Math.hypot(p.sx - s.sx, p.sy - s.sy);
       if (d <= bestD) { bestD = d; best = i; }
     }
@@ -607,15 +810,91 @@
   function snapWorld(w) { return state.snapOn ? G.snapPoint(w, state.gridMm) : { x: G.round1(w.x), y: G.round1(w.y) }; }
   const boardToLocal = (b) => { const L = activeLayout(); return { x: b.x - L.x, y: b.y - L.y }; };
 
+  // curve control-dot hit-test (screen space). Sets curveHitSlot to which cp slot (0 primary, 2 cubic-2).
+  const HIT_CURVE = 17;
+  function hitCurve(p) {
+    const ap = activePiece(); if (!ap || !ap.edges) return -1;
+    const ns = ap.nodes, n = ns.length; let best = -1, bestD = HIT_CURVE, bestSlot = 0;
+    for (const k of Object.keys(ap.edges)) {
+      const i = parseInt(k, 10); if (!(i >= 0 && i < n)) continue;
+      const c = ap.edges[k].curve; if (!c || !Array.isArray(c.cp)) continue;
+      const a = ns[i], b = ns[(i + 1) % n];
+      for (const sl of (c.type === "cubic" ? [0, 2] : [0])) {
+        const wl = G.edgeLocalToWorld(a, b, c.cp[sl], c.cp[sl + 1]);
+        const s = W2S(aB({ x: wl[0], y: wl[1] }));
+        const d = Math.hypot(p.sx - s.sx, p.sy - s.sy);
+        if (d <= bestD) { bestD = d; best = i; bestSlot = sl; }
+      }
+    }
+    curveHitSlot = bestSlot;
+    return best;
+  }
+  // Dart apex in LOCAL coords — same inward-normal as loweredBoundary, so the handle sits on the
+  // printed dart tip. Returns the apex {x,y} plus its base (the edge point at `center`). Single source
+  // of truth shared by render + hit-test + drag.
+  function dartApexLocal(piece, d) {
+    const ns = piece.nodes, n = ns.length; if (d.edge < 0 || d.edge >= n) return null;
+    let cx = 0, cy = 0; for (const q of ns) { cx += q.x; cy += q.y; } cx /= n; cy /= n;
+    const a = ns[d.edge], b = ns[(d.edge + 1) % n];
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    let nx = -dy / L, ny = dx / L;
+    const cDist = d.center * L, mx = a.x + cDist * ux, my = a.y + cDist * uy;
+    if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }   // inward (toward centroid)
+    return { x: mx + nx * d.depth, y: my + ny * d.depth, base: { x: mx, y: my } };
+  }
+  const HIT_DART = 17;
+  function hitDart(p) {
+    const ap = activePiece(); if (!ap || !ap.darts) return -1;
+    let best = -1, bestD = HIT_DART;
+    for (let i = 0; i < ap.darts.length; i++) {
+      const apex = dartApexLocal(ap, ap.darts[i]); if (!apex) continue;
+      const s = W2S(aB(apex)), d = Math.hypot(p.sx - s.sx, p.sy - s.sy);
+      if (d <= bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  // Curve-mode tap: hit a dot → select it; else hit a straight edge → bow it (a gentle inward default).
+  function handleCurveTap(p) {
+    const ap = activePiece(); if (!ap) return;
+    const ci = hitCurve(p);
+    if (ci >= 0) { select("curve", ci); render(); return; }
+    const ei = hitEdge(p);
+    if (ei < 0) { select("none", -1); scheduleRender(); return; }
+    ap.edges = ap.edges || {};
+    if (!ap.edges[String(ei)]) {
+      ap.edges[String(ei)] = { curve: { type: "quad", cp: [0.5, G.round2(0.15 * G.edgeInwardSign(ap.nodes, ei))] } };
+      commit();
+    }
+    select("curve", ei); render();
+  }
+  // Dart-mode tap: hit an apex → select it; else hit an edge → drop a wedge dart there.
+  function handleDartTap(p) {
+    const ap = activePiece(); if (!ap) return;
+    const di = hitDart(p);
+    if (di >= 0) { select("dart", di); render(); return; }
+    const L = activeLayout(), wl = S2W(p.sx, p.sy);
+    const ne = G.nearestEdge(ap.nodes, { x: wl.x - L.x, y: wl.y - L.y });
+    const pr = G.worldToScreen(ne.proj.x + L.x, ne.proj.y + L.y, state.cam);
+    if (Math.hypot(p.sx - pr.sx, p.sy - pr.sy) > 28) { setStatus("Tap on an edge to add a dart.", "warn"); clearStatus(2500); return; }
+    ap.darts = ap.darts || [];
+    const id = freshId("d", new Set(ap.darts.map((d) => d.id)));
+    ap.darts.push({ id, edge: ne.edge, center: G.round2(ne.proj.t), width: 26, depth: 120, kind: "wedge" });
+    select("dart", ap.darts.length - 1); commit(); render();
+  }
   function handleNotchTap(p) {
     const ap = activePiece(); if (!ap) return;
     const ri = hitNotch(p);
-    if (ri >= 0) { ap.notches.splice(ri, 1); commit(); setStatus("Notch removed.", "info"); clearStatus(2000); return; }
+    if (ri >= 0) {   // cycle single → double → remove
+      const nt = ap.notches[ri];
+      if (Number.isInteger(nt.edge) && nt.type === "single") { nt.type = "double"; commit(); setStatus("Notch → double (passmark).", "info"); }
+      else { ap.notches.splice(ri, 1); commit(); setStatus("Notch removed.", "info"); }
+      clearStatus(2000); return;
+    }
     const L = activeLayout(), wl = S2W(p.sx, p.sy);
     const ne = G.nearestEdge(ap.nodes, { x: wl.x - L.x, y: wl.y - L.y });
     const pr = G.worldToScreen(ne.proj.x + L.x, ne.proj.y + L.y, state.cam);
     if (Math.hypot(p.sx - pr.sx, p.sy - pr.sy) > 28) { setStatus("Tap on an edge to add a notch.", "warn"); clearStatus(2500); return; }
-    ap.notches.push({ x: G.round2(ne.proj.x), y: G.round2(ne.proj.y) });
+    ap.notches.push({ edge: ne.edge, t: G.round2(ne.proj.t), type: "single" });   // upgraded {edge,t,type}
     commit();
   }
   function addPlacement() {
@@ -634,22 +913,32 @@
     const as = W2S(aB(a)), bs = W2S(aB(b));
     const pr = G.projectPointOnSegment({ x: p.sx, y: p.sy }, { x: as.sx, y: as.sy }, { x: bs.sx, y: bs.sy });
     const w = boardToLocal(snapWorld(S2W(pr.x, pr.y)));
+    const splitCurved = featureOnEdge(activePiece(), ei);
     activePiece().nodes = G.insertVertexOnEdge(ns, ei, { x: G.round2(w.x), y: G.round2(w.y) });
     reindexSeamsForInsert(activePiece().id, ei);
     commit(); select("vertex", ei + 1);
+    if (splitCurved) { setStatus("Heads up — adding a point on a curved/darted edge reshapes it.", "warn"); clearStatus(3500); }
+  }
+  // true if the piece has a curve, dart, or upgraded notch on authored edge `edge`.
+  function featureOnEdge(ap, edge) {
+    return !!((ap.edges && ap.edges[String(edge)])
+      || (ap.darts || []).some((d) => d.edge === edge)
+      || (ap.notches || []).some((nt) => Number.isInteger(nt.edge) && nt.edge === edge));
   }
   function deleteSelected() {
     if (!canEdit()) return;
     if (state.selection.type !== "vertex") { setStatus("Select a corner first, then Delete.", "warn"); clearStatus(3000); return; }
     if (nodes().length <= 3) { setStatus("A shape needs at least 3 corners.", "warn"); clearStatus(3000); return; }
-    reindexSeamsForDelete(activePiece().id, state.selection.index);
-    nodes().splice(state.selection.index, 1);
+    const ap = activePiece(), k = state.selection.index, nn = nodes().length;
+    const adjFeature = featureOnEdge(ap, k) || featureOnEdge(ap, (k - 1 + nn) % nn);   // the two edges that merge
+    reindexSeamsForDelete(ap.id, k);
+    nodes().splice(k, 1);
     commit(); select("none", -1); scheduleRender();
+    if (adjFeature) { setStatus("Heads up — deleting this point reshaped a nearby curve, dart, or notch.", "warn"); clearStatus(3500); }
   }
   // edge-insert / notch / deselect when a tap lands on (or near) the active piece
   function resolveActiveTap(p) {
     if (!canEdit()) { select("none", -1); return; }
-    if (state.notchMode) { handleNotchTap(p); return; }
     const ei = hitEdge(p);
     if (ei >= 0) { insertOnEdge(ei, p); return; }
     select("none", -1);
@@ -669,10 +958,12 @@
   // higher edges down. Seams attached to the deleted edge are removed.
   function reindexSeamsForInsert(pieceId, ei) {
     for (const s of state.seams) for (const ref of [s.a, s.b]) if (ref.piece === pieceId && ref.edge > ei) ref.edge += 1;
+    G.reindexEdgeRefs(pieceById(pieceId), { kind: "insert", ei });   // keep darts/curves/notches on the same piece in lockstep
   }
   function reindexSeamsForDelete(pieceId, k) {
     state.seams = state.seams.filter((s) => !((s.a.piece === pieceId && s.a.edge === k) || (s.b.piece === pieceId && s.b.edge === k)));
     for (const s of state.seams) for (const ref of [s.a, s.b]) if (ref.piece === pieceId && ref.edge > k) ref.edge -= 1;
+    G.reindexEdgeRefs(pieceById(pieceId), { kind: "delete", k });
   }
 
   function edgeEndpointsScreen(ref) {
@@ -755,15 +1046,34 @@
         : null;
     commit(); render();
   }
-  function toggleSew() {
-    state.sewMode = !state.sewMode;
-    if (state.sewMode && state.notchMode) { state.notchMode = false; updateNotchChip(); }
+  // ── draw-mode exclusivity (notch / sew / curve / dart are mutually exclusive) ─────────────────
+  const MODES = ["notchMode", "sewMode", "curveMode", "dartMode"];
+  function syncModeChips() { updateNotchChip(); updateSewChip(); updateCurveChip(); updateDartChip(); }
+  // Turn mode m on (clearing the other three), or all-off if m was already on (toggle). One source of
+  // truth so chips never desync; any switch abandons a pending sew. render() because overlays read mode.
+  function setMode(m) {
+    const turningOn = m && !state[m];
+    for (const k of MODES) state[k] = false;
+    if (turningOn) state[m] = true;
     state.sewPending = null;
-    updateSewChip();
-    if (state.sewMode) { setStatus("Sew mode: tap an edge on one piece, then a matching edge on another, to join them.", "info"); clearStatus(4500); }
+    syncModeChips();
     render();
   }
+  function toggleSew() {
+    setMode("sewMode");
+    if (state.sewMode) { setStatus("Sew mode: tap an edge on one piece, then a matching edge on another, to join them.", "info"); clearStatus(4500); }
+  }
   function updateSewChip() { const c = $("#ed-seam"); if (c) c.classList.toggle("on", state.sewMode); }
+  function updateCurveChip() { const c = $("#ed-curve"); if (c) c.classList.toggle("on", state.curveMode); }
+  function updateDartChip() { const c = $("#ed-dart"); if (c) c.classList.toggle("on", state.dartMode); }
+  function toggleCurve() {
+    setMode("curveMode");
+    if (state.curveMode) { setStatus("Curve mode: tap a straight edge to bow it (a neckline, armhole, A-line); drag the blue dot to shape it.", "info"); clearStatus(4500); }
+  }
+  function toggleDart() {
+    setMode("dartMode");
+    if (state.dartMode) { setStatus("Dart mode: tap an edge to add a dart; drag the pink dot to set its depth.", "info"); clearStatus(4500); }
+  }
   function renderSeamList() {
     const list = $("#ed-seams");
     if (list) {
@@ -796,6 +1106,7 @@
   const pointers = new Map();
   let mode = "idle", dragIndex = -1, dragMoved = false, panStart = null, pinchStart = null;
   let placeIndex = -1, placeGrab = null, pieceMove = null;
+  let curveDrag = null, curveHitSlot = 0;   // curve control-dot being dragged + which cp slot (0 or 2)
 
   function localPoint(e) { const r = svg.getBoundingClientRect(); return { sx: e.clientX - r.left, sy: e.clientY - r.top }; }
 
@@ -807,6 +1118,25 @@
     if (pointers.size > 2) return;
     if (state.sewMode) {   // sewing: a tap picks edges/seams; a drag still pans
       mode = "maybeSew"; panStart = { sx: p.sx, sy: p.sy, cam: Object.assign({}, state.cam) };
+      return;
+    }
+    // Draw modes (notch/curve/dart) commandeer the tap like sew mode does — skipping the corner/
+    // placement/piece hit ladder so a tap near a corner can't accidentally start a vertex drag.
+    // Each first grabs its OWN handle for a drag (curve/dart), else falls to a tap that places/cycles.
+    if (state.curveMode) {
+      const ci = hitCurve(p);
+      if (ci >= 0) { mode = "dragCurve"; curveDrag = { edge: ci, slot: curveHitSlot }; dragMoved = false; select("curve", ci); scheduleRender(); return; }
+      mode = "maybeCurve"; panStart = { sx: p.sx, sy: p.sy, cam: Object.assign({}, state.cam) };
+      return;
+    }
+    if (state.dartMode) {
+      const di = hitDart(p);
+      if (di >= 0) { mode = "dragDart"; dragIndex = di; dragMoved = false; select("dart", di); scheduleRender(); return; }
+      mode = "maybeDart"; panStart = { sx: p.sx, sy: p.sy, cam: Object.assign({}, state.cam) };
+      return;
+    }
+    if (state.notchMode) {   // notch: a tap adds/cycles a notch; a drag still pans
+      mode = "maybeNotch"; panStart = { sx: p.sx, sy: p.sy, cam: Object.assign({}, state.cam) };
       return;
     }
     if (canEdit()) {
@@ -847,6 +1177,29 @@
       setReadout(`${pl.label}: ${fmtVal(pl.x)}, ${fmtVal(pl.y)} ${unitShort()}`);
       scheduleRender(); return;
     }
+    if (mode === "dragCurve") {
+      const ap = activePiece(), i = curveDrag.edge, n = ap.nodes.length;
+      const c = ap.edges && ap.edges[String(i)] && ap.edges[String(i)].curve;
+      if (c) {
+        const a = ap.nodes[i], b = ap.nodes[(i + 1) % n];
+        const w = boardToLocal(S2W(p.sx, p.sy));   // no snap — smooth bow control
+        const uv = G.worldToEdgeLocal(a, b, w), sl = curveDrag.slot;
+        c.cp[sl] = G.round2(clamp(uv[0], 0, 1));        // along-edge ∈ [0,1]
+        c.cp[sl + 1] = G.round2(clamp(uv[1], -1, 1));   // normal bow — clamp so a stray drag can't explode the board
+        dragMoved = true; setReadoutForSelection();
+      }
+      scheduleRender(); return;
+    }
+    if (mode === "dragDart") {   // depth only — center is set via the numeric card (avoids finger-jitter slide)
+      const ap = activePiece(), d = ap.darts && ap.darts[dragIndex], n = ap.nodes.length;
+      if (d) {
+        const a = ap.nodes[d.edge], b = ap.nodes[(d.edge + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const uv = G.worldToEdgeLocal(a, b, boardToLocal(S2W(p.sx, p.sy)));
+        d.depth = G.round2(clamp(Math.abs(uv[1]) * L, 1, 0.45 * L));   // |v|·L = mm; clamp so it can't degenerate/explode
+        dragMoved = true; setReadoutForSelection();
+      }
+      scheduleRender(); return;
+    }
     if (mode === "maybePiece") {
       if (Math.hypot(p.sx - pieceMove.downSx, p.sy - pieceMove.downSy) > MOVE_TOL) mode = "dragPiece";
     }
@@ -858,7 +1211,7 @@
       setReadout(`${pc.name}: ${fmtVal(pc.layout.x)}, ${fmtVal(pc.layout.y)} ${unitShort()}`);
       scheduleRender(); return;
     }
-    if (mode === "maybePan" || mode === "maybeSew") {
+    if (mode === "maybePan" || mode === "maybeSew" || mode === "maybeNotch" || mode === "maybeCurve" || mode === "maybeDart") {
       if (Math.hypot(p.sx - panStart.sx, p.sy - panStart.sy) > MOVE_TOL) mode = "pan";
     }
     if (mode === "pan") {
@@ -879,7 +1232,12 @@
     if (mode === "drag") { if (dragMoved) commit(); else setReadoutForSelection(); dragIndex = -1; mode = "idle"; scheduleRender(); return; }
     if (mode === "dragPlace") { if (dragMoved) commit(); placeIndex = -1; mode = "idle"; scheduleRender(); return; }
     if (mode === "dragPiece") { if (dragMoved) { commit(); warnIfOverlap(); } mode = "idle"; scheduleRender(); return; }
+    if (mode === "dragCurve") { if (dragMoved) commit(); curveDrag = null; mode = "idle"; scheduleRender(); return; }
+    if (mode === "dragDart") { if (dragMoved) commit(); dragIndex = -1; mode = "idle"; scheduleRender(); return; }
     if (mode === "maybeSew") { handleSewTap(p); mode = "idle"; scheduleRender(); return; }
+    if (mode === "maybeNotch") { handleNotchTap(p); mode = "idle"; scheduleRender(); return; }
+    if (mode === "maybeCurve") { handleCurveTap(p); mode = "idle"; scheduleRender(); return; }
+    if (mode === "maybeDart") { handleDartTap(p); mode = "idle"; scheduleRender(); return; }
     if (mode === "maybePiece") {
       if (pieceMove.switched) { fitPiece(pieceMove.idx); render(); }   // tapped another piece → select + zoom in
       else resolveActiveTap(p);                                         // tapped the active piece → edit
@@ -890,8 +1248,8 @@
   }
   function onCancel(e) {
     pointers.delete(e.pointerId);
-    if ((mode === "drag" || mode === "dragPlace" || mode === "dragPiece") && dragMoved) restore(state.history[state.hindex]);
-    mode = "idle"; dragIndex = -1; placeIndex = -1; pieceMove = null; scheduleRender();
+    if ((mode === "drag" || mode === "dragPlace" || mode === "dragPiece" || mode === "dragCurve" || mode === "dragDart") && dragMoved) restore(state.history[state.hindex]);
+    mode = "idle"; dragIndex = -1; placeIndex = -1; pieceMove = null; curveDrag = null; scheduleRender();
   }
   function startPinch() {
     const [a, b] = [...pointers.values()];
@@ -970,6 +1328,7 @@
     if (p.kind === "freeform") {
       const params = p.params || {};
       state.pieces = G.normalizePieces(params); state.gridMm = params.gridMm || 5; state.id = ident.id;
+      state.pieces.forEach((pc) => G.migrateNotches(pc));   // upgrade legacy {x,y} notches now so the single→double cycle works in-session
       state.seams = G.normalizeSeams(params.seams || [], state.pieces);
       state.body = G.normalizeBody(params.body);   // schema-3 wearer measurements (null for bags)
     } else if (p.kind === "rectangle") {
@@ -1032,8 +1391,16 @@
         case "ed-undo": undo(); break;
         case "ed-redo": redo(); break;
         case "ed-snap": state.snapOn = !state.snapOn; updateSnapChip(); break;
+        case "ed-garment": toggleGarment(); break;
         case "ed-notch": toggleNotch(); break;
         case "ed-seam": toggleSew(); break;
+        case "ed-curve": toggleCurve(); break;
+        case "ed-dart": toggleDart(); break;
+        case "ed-curve-type": cycleCurveType(); break;
+        case "ed-curve-side": setCurveSide(btn.dataset.side); break;
+        case "ed-del-curve": deleteCurve(); break;
+        case "ed-dart-kind": setDartKind(btn.dataset.kind); break;
+        case "ed-del-dart": deleteDart(); break;
         case "ed-select-seam": selectSeam(parseInt(btn.dataset.seam, 10)); break;
         case "ed-del-seam": deleteSeam(); break;
         case "ed-seam-angle": setSeamAngle(btn.dataset.angle); break;
@@ -1063,13 +1430,19 @@
       else if (meta && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
       else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        if (state.selection.type === "placement") deletePlacement(); else deleteSelected();
+        if (state.selection.type === "placement") deletePlacement();
+        else if (state.selection.type === "dart") deleteDart();
+        else if (state.selection.type === "curve") deleteCurve();
+        else deleteSelected();
       }
     });
 
     updateSnapChip();
     updateNotchChip();
     updateSewChip();
+    updateCurveChip();
+    updateDartChip();
+    updateMeasureChip();
   }
   function updateSnapChip() {
     const c = $("#ed-snap"); if (!c) return;
@@ -1077,9 +1450,7 @@
     c.textContent = state.snapOn ? "Snap " + fmtVal(state.gridMm) + " " + unitShort() : "Snap off";
   }
   function toggleNotch() {
-    state.notchMode = !state.notchMode;
-    if (state.notchMode && state.sewMode) { state.sewMode = false; state.sewPending = null; updateSewChip(); render(); }
-    updateNotchChip();
+    setMode("notchMode");
     if (state.notchMode) { setStatus("Notch mode: tap an edge to add a notch, tap a notch to remove it.", "info"); clearStatus(3500); }
   }
   function updateNotchChip() { const c = $("#ed-notch"); if (c) c.classList.toggle("on", state.notchMode); }

@@ -259,6 +259,44 @@
     }
     return out;
   }
+  // Retarget a SINGLE piece's edge-indexed authoring data when a node is inserted/deleted, in lockstep
+  // with the seam EdgeRefs (which the editor retargets itself, since seams are cross-piece/global).
+  // op = { kind:"insert", ei } (a node was added after edge ei) | { kind:"delete", k } (node k removed,
+  // edge k disappears). Mutates piece.darts[].edge (int), piece.notches[].edge (upgraded notches only),
+  // and piece.edges (string-keyed-by-start-node curve map) in place. Same rule as the seam loop:
+  // insert keeps a ref ON edge ei (now the split's first half) and shifts higher refs +1; delete drops
+  // refs ON edge k and shifts higher refs −1. Run BEFORE commit() so clonePiece never silently drops a
+  // stale ref. Pure (no DOM/Maker) so it is headless-testable.
+  function reindexEdgeRefs(piece, op) {
+    if (!piece) return;
+    const shiftMap = (map, drop, f) => {
+      if (!map || typeof map !== "object") return map;
+      const out = {};
+      for (const key of Object.keys(map)) {
+        const i = parseInt(key, 10);
+        if (drop != null && i === drop) continue;
+        out[String(f(i))] = map[key];
+      }
+      return out;
+    };
+    if (op.kind === "insert") {
+      const ei = op.ei;
+      (piece.darts || []).forEach((d) => { if (d.edge > ei) d.edge += 1; });
+      (piece.notches || []).forEach((n) => { if (Number.isInteger(n.edge) && n.edge > ei) n.edge += 1; });
+      piece.edges = shiftMap(piece.edges, null, (i) => (i > ei ? i + 1 : i));
+    } else if (op.kind === "delete") {
+      const k = op.k;
+      if (Array.isArray(piece.darts)) {
+        piece.darts = piece.darts.filter((d) => d.edge !== k);
+        piece.darts.forEach((d) => { if (d.edge > k) d.edge -= 1; });
+      }
+      if (Array.isArray(piece.notches)) {
+        piece.notches = piece.notches.filter((n) => !(Number.isInteger(n.edge) && n.edge === k));
+        piece.notches.forEach((n) => { if (Number.isInteger(n.edge) && n.edge > k) n.edge -= 1; });
+      }
+      piece.edges = shiftMap(piece.edges, k, (i) => (i > k ? i - 1 : i));
+    }
+  }
   function pieceLabelLines(p, w, h) {
     const lines = [`${p.name}${p.count > 1 ? " — cut " + p.count : ""}`, `${Math.round(w)} × ${Math.round(h)} mm`];
     if (p.seamMm > 0) lines.push(`+ ${Math.round(p.seamMm)} mm seam allowance`);
@@ -278,6 +316,27 @@
     const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
     const nx = -dy / L, ny = dx / L;                 // unit left-normal
     return [a.x + u * dx + v * L * nx, a.y + u * dy + v * L * ny];
+  }
+  // EXACT analytic inverse of edgeLocalToWorld: a world point P (same LOCAL frame as a,b) →
+  // its [u,v] in the edge-local frame. u = (P−a)·d/|d|²; v = (P−a)·n̂/|d| (scaled by chord length,
+  // matching the forward v·L·n̂). The editor's curve-handle drag converts a dragged screen point
+  // back to cp this way; the dart-depth drag reads |v|·L as the mm depth. round-trip-tested headless.
+  function worldToEdgeLocal(a, b, P) {
+    const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1;
+    const px = P.x - a.x, py = P.y - a.y;
+    return [(px * dx + py * dy) / L2, (-px * dy + py * dx) / L2];
+  }
+  // Inward edge-normal SIGN for edge i of a node list (the convention loweredBoundary uses): +1 when
+  // the edge-local left-normal n̂=(−dy,dx)/L already points toward the polygon centroid, else −1.
+  // So `cp[1] = 0.15 * edgeInwardSign(nodes, i)` bows a curve INWARD for any winding (CW or CCW),
+  // agreeing with the dart apex which is always placed toward the centroid.
+  function edgeInwardSign(nodes, i) {
+    const n = nodes.length; if (n < 3) return 1;
+    let cx = 0, cy = 0; for (const q of nodes) { cx += q.x; cy += q.y; } cx /= n; cy /= n;
+    const a = nodes[i], b = nodes[(i + 1) % n];
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+    const nx = -dy / L, ny = dx / L, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    return ((cx - mx) * nx + (cy - my) * ny) < 0 ? -1 : 1;
   }
   // Build a Maker.js model from a node list. `curves` (optional) is aligned to the edges:
   // curves[i] = {type,cp} makes edge i a Bézier/arc sub-model; else a straight Line. With no
@@ -416,7 +475,10 @@
       return e && e.curve ? e.curve : null;
     }) : null;
     const facet = hasCurves ? Math.min(facetFor(maxR), 1.2) : facetFor(maxR);
-    const build = () => modelFromNodes(mk, nodes, curves);
+    // Build the Maker model; if a curved edge fails (BezierCurve needs the global Bezier — vendored
+    // bezier.js, loaded before browser.maker.js; if absent it throws) degrade to STRAIGHT edges so the
+    // editor still renders instead of blanking. With bezier.js present this try always takes the curve path.
+    const build = () => { try { return modelFromNodes(mk, nodes, curves); } catch (_) { return modelFromNodes(mk, nodes, null); } };
     let model = build();
     if (maxR > 0) {
       try {
@@ -656,6 +718,7 @@
     nodesToPoints, nodesToPaths, insertVertexOnEdge, polylineToNodes,
     rectPiece, normalizePieces, normalizeSeams, normalizeBody, piecesFromDoc, pieceGeom, nearestEdge, notchMark, notchTicks,
     loweredBoundary, DEFAULT_BODY,
+    edgeLocalToWorld, worldToEdgeLocal, edgeInwardSign, reindexEdgeRefs, migrateNotches,
     packLayouts, normalizeDoc, freeformToDoc, exportBoard, defaultParams,
   };
 })();
