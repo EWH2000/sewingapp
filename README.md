@@ -47,8 +47,10 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 (In the container, `BASE_PATH=/sewing` makes the same image serve under the proxy.)
 
 ## Status
-The 1:1 print spine is physically proven (single-page and tiled). The app shell +
-boxy-tote template are done. **Next: a freeform editor** (draw/drag your own
-shapes) — see `HANDOFF-freeform-editor.md`.
+The 1:1 print spine is physically proven (single-page and tiled). The freeform
+multi-piece editor, the 3D assembled preview, and a gravity garment-drape on a
+parametric dress form are all done (see `CLAUDE.md` for the full milestone log).
+**Next: the interactive garment-authoring UI** (draw curves/darts/notches + enter
+body measurements on `/edit`) — see `HANDOFF-editor-authoring-ui.md`.
 
 MIT licensed. A personal home-server project.

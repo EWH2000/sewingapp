@@ -3,9 +3,11 @@
 Not commitments — a parking lot. See `DESIGN.md` for the locked architecture.
 
 ## Next up
-- **Freeform editor** (the active next step — see `HANDOFF-freeform-editor.md`):
-  draw/drag points, round corners, add pockets/notches/darts on the shared pattern
-  document.
+- **Interactive garment-authoring UI** (the active next step — see
+  `HANDOFF-editor-authoring-ui.md`): the visual tools on `/edit` to draw curves
+  (necklines/armholes), place darts, set notch type, and enter body measurements.
+  The data model + print lowering already exist; this is additive UI. (The freeform
+  editor itself — draw/drag points, round corners, pockets/notches/seams — is done.)
 
 ## Templates
 - More bag templates: drawstring bag, zip pouch, boxed-corner tote (one-piece body),

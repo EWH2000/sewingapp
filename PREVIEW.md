@@ -927,7 +927,7 @@ focused sessions; estimates, not commitments — 3b especially.)
   view snaps each handle anchor from the folded rim to the nearest settled node, so handles attach
   flush to the inflated bag. **Deferred — NEXT:** welding/true-volume, plain-leather strap texture,
   notch/dart authoring — leaning into M5. Also this session: fixed a span-strap `count×2` bug (was a
-  parallel pair; now a single bridging handle). **Starting orders were `HANDOFF-M4-cloth.md`.**
+  parallel pair; now a single bridging handle).
   - [x] **Prep layer (2026-06-21, headless).** Vendored `poly2tri.js`; `pattern-mesh.js`
     triangulates a piece into a sim mesh (boundary resampled to ~h with authored-edge+t tags,
     interior Steiner grid, CDT, distance+bend constraints) and pairs seam nodes by arc-length

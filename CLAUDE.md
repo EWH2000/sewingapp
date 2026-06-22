@@ -200,9 +200,8 @@ layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) + `verify-fol
 the drape view snaps each handle anchor from the folded rim to the nearest settled surface node
 (`preview3d.snapToSurface`), so the handle attaches flush to the inflated bag (the fold view keeps the
 raw rim anchors). **Deferred — NEXT:** welding/true-volume, plain-leather strap texture — all leaning
-into **M5** (Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `HANDOFF-3d-preview.md`
-+ `PREVIEW.md`; `HANDOFF-M4-cloth.md` was the M4 cloth starting orders, `HANDOFF-strap.md` the strap,
-`HANDOFF-M3-fold.md` the M3 ones.
+into **M5** (Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `PREVIEW.md`
+§9 (the per-milestone starting-orders handoffs have been retired into this status + `PREVIEW.md`; git keeps them).
 
 **M5a / Step-3b garment AUTHORING foundation DONE (2026-06-22, owner-gated — she confirmed the seeded
 garments print + look right; flat-laying preview understood as expected pre-form/gravity).** The doc can
@@ -225,7 +224,7 @@ gains an additive read-only `GET /patterns` list route. **`tools/seed-examples.m
 seeded **id 5 A-line Skirt, id 6 Tank Bodice, id 7 Tank Dress** (curves + darts + seams + body); existing
 bags id 3/id 4 untouched. The seeded bodice tiles to a valid 8-sheet 0-bad-page **true-1:1 Letter PDF**.
 Tests: `verify-editor-geom.mjs` (85) + `verify-seams.mjs` (27) extended, new `tools/preview/verify-lowering.mjs`
-(16); full headless suite green. Starting orders = `HANDOFF-M5-garment.md`.
+(16); full headless suite green.
 
 **M5b / Step-3b parametric DRESS FORM DONE (2026-06-22, owner-gated — "body and form editor work well").**
 A garment preview now shows a translucent **dress form** sized from the doc's `body` measurements, with a
@@ -276,7 +275,7 @@ once, byte-identical). Tests: `verify-garment-drape.mjs` 15→20 (dart legs tagg
 gravity, front gains depth, no NaN); full suite green. **NEXT (M5c-step3): self-collision** (cloth-on-cloth,
 final settle passes) **+ settle tuning** (the drape freezes "warm" — slightly wavy). Then the **interactive
 editor authoring UI** (curve drag-handle / dart / notch / measurements on `/edit` — the data model + print
-lowering already exist, so it's additive). Starting orders for the fresh session: `HANDOFF-M5c-next.md`.
+lowering already exist, so it's additive — starting orders in `HANDOFF-editor-authoring-ui.md`).
 
 **M5c-step3 / BODICE-GAP FIX + "doesn't-fit" stretch-to-fit + warning DONE (2026-06-22, owner-gated — "that
 fix worked, there are no more gaps").** The tank bodice drape showed gaps (the form peeking through), which was
