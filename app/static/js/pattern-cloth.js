@@ -29,7 +29,8 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 4;   // 4: cloth self-collision (final-settle node repulsion) + garment seam-closeup (free-hem zip)
+  const SIM_VERSION = 5;   // 5: set-in SLEEVE drape (placeGarment sleeve wrap + underarm non-dart self-seam spring)
+                           // 4: cloth self-collision (final-settle node repulsion) + garment seam-closeup (free-hem zip)
                            // 3: garment unpinned stitch-up + bounded stretch-to-fit + strain metric
                            // 2: garment gravity drape + dart welds (invalidates pre-dart cached drapes)
 
@@ -111,13 +112,17 @@
     // coincident on the body's widest point (a small warm-start gap there never closes against the body).
     const FRONT = [-90 * DEG, 90 * DEG], BACK = [90 * DEG, 270 * DEG], SIDE_R = [40 * DEG, 140 * DEG], SIDE_L = [220 * DEG, 320 * DEG];
     const place = {};
+    const byId = {}; for (const p of pieces) byId[p.id] = p;
+    const sleeves = [];
     pieces.forEach((p, idx) => {
       const nm = (p.name || "").toLowerCase();
-      // straps + finishing strips (waistband/binding/facing) are not draping panels.
-      if (isStrap(p, seams) || /waistband|binding|facing|band/.test(nm)) return;
+      const role = (p.place3d && p.place3d.role) || inferRole(p, idx);
+      // straps + finishing strips (waistband/binding/facing) are not draping panels — but a SLEEVE is
+      // one, so the strap/long-&-thin guard must NOT skip it (a long sleeve can read as long-&-thin).
+      if (role !== "sleeve" && (isStrap(p, seams) || /waistband|binding|facing|band/.test(nm))) return;
       const nodes = p.nodes || []; if (!nodes.length) return;
       const bx = pieceBBoxX(nodes), by = pieceBBoxY(nodes);
-      const role = (p.place3d && p.place3d.role) || inferRole(p, idx);
+      if (role === "sleeve") { sleeves.push({ p, nm, bx, by }); return; }   // PASS 2 (needs the bodice wraps)
       // skirt/back can come from the role OR the piece name (robust to hand-authored naming).
       const isBack = /back/.test(role) || (!/front/.test(role) && /back/.test(nm));
       const isSkirt = /skirt/.test(role) || /skirt/.test(nm);
@@ -155,6 +160,54 @@
           };
       place[p.id] = { wrap, pinTest, role };
     });
+
+    // ── PASS 2: SLEEVES, anchored onto their armholes (now that the bodice wraps exist) ──
+    // A naïve "tube beside the torso" warm start starts the cap seam ~50 mm off the armhole, and the
+    // stitch-up then DRAGS the bodice armhole outward → the bodice's own side seam splits open. Instead
+    // map the sleeve's cap SEAMLINE directly onto the bodice armhole: the 3 cap landmarks (underarm-R =
+    // node 2 → BACK-armhole underarm; cap-top = node 3 → shoulder; underarm-L = node 4 → FRONT-armhole
+    // underarm) ride the wrapped bodice armhole, and the body of the sleeve hangs straight down (leaning
+    // out so it clears the wider waist/hip). The cap seam then starts ~0 → no bodice disruption.
+    const og = skin + gap;
+    const lerp3 = (A, B, t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
+    for (const { p, nm, bx, by } of sleeves) {
+      // the 3D shoulder/underarm of the bodice armhole a sleeve cap edge sews to (via the bodice wrap).
+      const armOf = (capEdge) => {
+        for (const s of seams) {
+          let other = null, oe = null;
+          if (s.a.piece === p.id && s.a.edge === capEdge) { other = s.b.piece; oe = s.b.edge; }
+          else if (s.b.piece === p.id && s.b.edge === capEdge) { other = s.a.piece; oe = s.a.edge; }
+          if (other && place[other] && byId[other]) {
+            const bp = byId[other], n = bp.nodes.length, a = bp.nodes[oe], b = bp.nodes[(oe + 1) % n];
+            const sh = a.y >= b.y ? a : b, un = a.y >= b.y ? b : a;     // shoulder = higher local y
+            return { S: place[other].wrap(sh.x, sh.y), U: place[other].wrap(un.x, un.y) };
+          }
+        }
+        return null;
+      };
+      const fr = armOf(3), bk = armOf(2);                              // e3 = front cap, e2 = back cap
+      let wrap;
+      if (fr && bk) {
+        const S = lerp3(fr.S, bk.S, 0.5), frontUnder = fr.U, backUnder = bk.U;
+        const hyp = Math.hypot(S[0], S[2]) || 1, outward = [S[0] / hyp, 0, S[2] / hyp];   // away from the Y axis
+        const underLocal = (p.nodes[2] && p.nodes[2].y) || by.H * 0.5, top = by.H;
+        const arch = (pp) => pp <= 0.5 ? lerp3(backUnder, S, pp / 0.5) : lerp3(S, frontUnder, (pp - 0.5) / 0.5);
+        wrap = (lx, ly) => {
+          const u = (lx - bx.lo) / bx.W;                               // u: 1 = node2 (back-under) … 0 = node4 (front-under)
+          const base = arch(1 - u);                                    // ride the armhole arch (pp = 1−u)
+          const capY = underLocal + (top - underLocal) * (1 - Math.abs(2 * u - 1));   // local arch height (peak at cap-top)
+          const depth = Math.max(0, capY - (ly - by.lo));              // mm below the cap seamline → hang down
+          return [base[0] + outward[0] * (og + 0.22 * depth), base[1] - depth, base[2] + outward[2] * (og + 0.22 * depth)];
+        };
+      } else {
+        // fallback (no armhole seams found): a tube hanging beside the torso at the shoulder band.
+        const sign = /left|_l|-l/.test(nm) ? -1 : 1, rTube = Math.max(20, bx.W / (2 * Math.PI));
+        const cxArm = sign * (ringAt(shoulderY).a + rTube + gap), yBase = shoulderY - by.H;
+        wrap = (lx, ly) => { const th = ((lx - bx.lo) / bx.W) * 2 * Math.PI;
+          return [cxArm + sign * rTube * Math.cos(th), yBase + (ly - by.lo), rTube * Math.sin(th)]; };
+      }
+      place[p.id] = { wrap, pinTest: () => false, role: "sleeve" };
+    }
     return { place };
   }
 
@@ -242,9 +295,17 @@
 
     // seam constraints (zero rest length). Derive sew DIRECTION per seam from the warm-start
     // geometry (mirror pattern-fold.inferFlip), then pair nodes by arc-length via seamPairs.
-    const seamLinks = [], kI = [], kJ = [], kSeam = [], weldI = [], weldJ = [];   // kSeam: doc seam id per pair (strain); welds: hard dart closures
+    // kI/kJ: STRUCTURAL seams (bodice + the sleeve underarm self-seam) — sewn from the start, in the
+    // strain gate. kIc/kJc: EASED cap seams (a sleeve cap into a shorter armhole) — held inert during
+    // the unpinned stitch-up and eased in AFTER the bodice pins, else the cap drags the (then-pinned)
+    // shoulder open; also NOT in the strain gate (their residual IS the intended ease). welds: darts.
+    const seamLinks = [], kI = [], kJ = [], kSeam = [], kIc = [], kJc = [], weldI = [], weldJ = [];
+    const isSleeveId = (pid) => { const gp = gplace && gplace[pid]; if (gp && gp.role) return gp.role === "sleeve"; const p = byId[pid]; return !!(p && p.place3d && p.place3d.role === "sleeve"); };
     for (const s of seams) {
-      if (s.a.piece === s.b.piece) continue;                          // self/dart seam — Step 3b
+      // A same-piece seam that joins TWO DIFFERENT edges (the sleeve underarm) sews as a normal SPRING
+      // via seamPairs below — ma===mb, distinct boundary nodes. Wedge darts are NOT in seams[] (they
+      // live in piece.darts[] → welded separately), so the only same-piece seam here is a real one.
+      if (s.a.piece === s.b.piece && s.a.edge === s.b.edge) continue;  // degenerate self-seam only
       const ma = meshes[s.a.piece], mb = meshes[s.b.piece];
       if (!ma || !mb) continue;                                       // strap seam, or a dropped piece
       const TA = transforms[s.a.piece], TB = transforms[s.b.piece];
@@ -253,7 +314,16 @@
         ? deriveFlipWrapped(gplace[s.a.piece], A, s.a.edge, gplace[s.b.piece], B, s.b.edge)
         : deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
       const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
-      for (const pr of pairs) { const gi = ma.start + pr[0], gj = mb.start + pr[1]; kI.push(gi); kJ.push(gj); kSeam.push(s.id); seamLinks.push([gi, gj]); }
+      // A CAP seam (sleeve ↔ bodice, exactly one side a sleeve) is phased + out of the strain gate —
+      // keyed on sleeve-involvement, NOT on ease, so even a 0-ease cap (the owner's relaxed style) is
+      // held out of the unpinned stitch-up. The underarm self-seam (sleeve↔sleeve) stays structural.
+      const capSeam = garment && (isSleeveId(s.a.piece) !== isSleeveId(s.b.piece));
+      for (const pr of pairs) {
+        const gi = ma.start + pr[0], gj = mb.start + pr[1];
+        if (capSeam) { kIc.push(gi); kJc.push(gj); }
+        else { kI.push(gi); kJ.push(gj); kSeam.push(s.id); }
+        seamLinks.push([gi, gj]);
+      }
     }
     // DART self-seams (garments): sew each wedge dart's two legs shut WITHIN its piece, so the
     // dart collapses + shapes the panel (a bust dart rounds the bodice front). The mesh already
@@ -270,6 +340,22 @@
       }
     }
 
+    // SLEEVE cap warm-start refine: snap each sleeve cap-boundary node ONTO its paired bodice armhole
+    // node's warm-start position (+ a few mm outward), so the cap starts ON the armhole instead of
+    // 50–140 mm off (the arch placement misses the curved armhole, and a stiff mesh can't be dragged
+    // that far by the boundary seam alone). The cap interior + the sleeve body keep their hung placement.
+    if (kIc.length) {
+      const nodeSleeve0 = new Array(N).fill(false);
+      for (const pr of pieceRanges) if (isSleeveId(pr.piece)) for (let q = 0; q < pr.count; q++) nodeSleeve0[pr.start + q] = true;
+      for (let k = 0; k < kIc.length; k++) {
+        const sleeveSide = nodeSleeve0[kIc[k]];
+        const cap = sleeveSide ? kIc[k] : kJc[k], arm = sleeveSide ? kJc[k] : kIc[k];
+        if (nodeSleeve0[arm]) continue;                      // a true cap pair has exactly one sleeve side
+        const A = pos[arm], hyp = Math.hypot(A[0], A[2]) || 1, sc = 1 + 4 / hyp;   // nudge just OUTSIDE the body
+        pos[cap] = [A[0] * sc, A[1], A[2] * sc];
+      }
+    }
+
     // ── inverse mass (area-weighted lumped, from the flat rest shape) ──
     const mass = new Float64Array(N);
     for (const t of tris) { const ar = triArea2D(localUV[t[0]], localUV[t[1]], localUV[t[2]]) / 3; mass[t[0]] += ar; mass[t[1]] += ar; mass[t[2]] += ar; }
@@ -281,8 +367,8 @@
     for (let i = 0; i < N; i++) { const q = pos[i]; X[3 * i] = Pp[3 * i] = q[0]; X[3 * i + 1] = Pp[3 * i + 1] = q[1]; X[3 * i + 2] = Pp[3 * i + 2] = q[2]; }
 
     // constraint counts + per-list Lagrange multipliers (reset each substep)
-    const nS = sI.length, nB = bI.length, nK = kI.length;
-    const lamS = new Float64Array(nS), lamB = new Float64Array(nB), lamK = new Float64Array(nK);
+    const nS = sI.length, nB = bI.length, nK = kI.length, nKc = kIc.length;
+    const lamS = new Float64Array(nS), lamB = new Float64Array(nB), lamK = new Float64Array(nK), lamKc = new Float64Array(nKc);
     const pforce = new Float64Array(3 * N);
     const dt = 1 / 60, dt2 = dt * dt;
     const vmax = 0.5 * h;
@@ -303,6 +389,7 @@
       for (let k = 0; k < nS; k++) addExcl(sI[k], sJ[k]);
       for (let k = 0; k < nB; k++) addExcl(bI[k], bJ[k]);
       for (let k = 0; k < nK; k++) addExcl(kI[k], kJ[k]);
+      for (let k = 0; k < nKc; k++) addExcl(kIc[k], kJc[k]);   // cap pairs are joined → never self-repel
       for (let k = 0; k < weldI.length; k++) addExcl(weldI[k], weldJ[k]);
     }
 
@@ -431,7 +518,11 @@
     }
 
     // One XPBD substep: integrate (inertia + pressure/gravity), project K iters, clamp, collide.
-    function substep(iters, alphaSeam, P) {
+    // alphaCap = compliance for the EASED cap seams (kIc/kJc); defaults to alphaSeam. The phases pass a
+    // LARGE alphaCap during the unpinned stitch-up (≈ no force, so the cap can't drag the shoulder) and
+    // ease it down to the seam stiffness after the bodice pins.
+    function substep(iters, alphaSeam, P, alphaCap) {
+      if (alphaCap == null) alphaCap = alphaSeam;
       if (P > 0) accumulatePressure(P);
       for (let i = 0; i < N; i++) {
         const wi = invm[i];
@@ -443,11 +534,12 @@
           Pp[o] = cur; X[o] = nx;
         }
       }
-      lamS.fill(0); lamB.fill(0); lamK.fill(0);
+      lamS.fill(0); lamB.fill(0); lamK.fill(0); if (nKc) lamKc.fill(0);
       for (let it = 0; it < iters; it++) {
         projectDist(sI, nS, sJ, sR, lamS, C.stretch);
         projectDist(bI, nB, bJ, bR, lamB, C.bend);
         projectDist(kI, nK, kJ, null, lamK, alphaSeam);
+        if (nKc) projectDist(kIc, nKc, kJc, null, lamKc, alphaCap);   // eased cap seams (phased; bag path has none)
       }
       let maxMove = 0;
       for (let i = 0; i < N; i++) {
@@ -476,13 +568,17 @@
       // bodice closes to ~7 mm. (Stretch ratio is reported but too detail-noisy to gate on.)
       const GAP_T = opts.strainGapMm != null ? opts.strainGapMm : 50;        // mm
       const SEG_T = 15;                                                       // mm: only highlight segments past this
+      // A seam with EASE (a set-in sleeve cap gathered into a shorter armhole) is MEANT to leave residual
+      // fullness — that gap is the design, not a misfit, so exclude it from the over-tension gate/highlight.
+      const easeSeam = new Set((seams || []).filter((s) => s.ease > 0).map((s) => s.id));
       const perSeam = {}; const order = [];
       let maxGap = 0, sumGap = 0; const gapSegs = [];
       for (let k = 0; k < nK; k++) {
+        const id = kSeam[k] || "?";
+        if (easeSeam.has(id)) continue;                                       // intentional cap ease, not a gap to warn on
         const oi = 3 * kI[k], oj = 3 * kJ[k];
         const d = Math.hypot(X[oi] - X[oj], X[oi + 1] - X[oj + 1], X[oi + 2] - X[oj + 2]);
         if (d > maxGap) maxGap = d; sumGap += d;
-        const id = kSeam[k] || "?";
         if (!perSeam[id]) { perSeam[id] = 0; order.push(id); }
         if (d > perSeam[id]) perSeam[id] = d;
         if (d > SEG_T) gapSegs.push(X[oi], X[oi + 1], X[oi + 2], X[oj], X[oj + 1], X[oj + 2]);
@@ -528,6 +624,8 @@
       const closeGrav = opts.closeGrav != null ? opts.closeGrav : 0.15;                  // gravity fraction during closure (not 0: keep the hang)
       const closeSeam0 = (opts.compliance && opts.compliance.closeSeam0) || C.seam1;     // start at the settle stiffness
       const closeSeam1 = (opts.compliance && opts.compliance.closeSeam1) || 1e-11;       // near-weld: zip the free seam shut + hold it
+      const capOff = (opts.compliance && opts.compliance.capOff) || 1e2;                 // eased cap seam compliance during stitch-up ≈ no force (≫ seam0=1e-1)
+      const capAttach = opts.capAttach != null ? opts.capAttach : 24;                    // zero-g substeps to pull the sleeve cap onto the armhole before gravity drops it
       const closeReSettle = opts.closeReSettle != null ? opts.closeReSettle : 24;
       const closeReGrav = opts.closeReGrav != null ? opts.closeReGrav : 0.2;             // re-settle gravity (low: the bulk drape is set; this just relaxes over-stretch + holds closure)
       const reSettleClamp = !!opts.reSettleClamp;                                        // clamp during re-settle (default OFF: it fights the seam closure on a free hem)
@@ -578,16 +676,35 @@
       for (let k = 0; k < maxStitch; k++) {                // Phase 1: zero-gravity eased stitch-up (UNPINNED → top seam sews)
         const s = maxStitch > 1 ? k / (maxStitch - 1) : 1;
         const alphaSeam = Math.exp(lerp(Math.log(C.seam0), Math.log(C.seam1), smoothstep(s)));
-        substep(stitchIters, alphaSeam, 0);
+        substep(stitchIters, alphaSeam, 0, capOff);        // cap seams INERT here (else they drag the shoulder before it pins)
       }
       if (stitchUnpinned) pinNow();                        // NOW pin the stitched shoulder/waist line (hangs from its support)
+      // SLEEVE cap-attach (M6): with the bodice closed + pinned, ease the cap seams capOff→near-weld in
+      // ZERO-G so the sleeve closes onto the armhole BEFORE its own weight drops it away. The bodice
+      // ARMHOLE nodes (the bodice side of each cap pair) are momentarily ANCHORED so the sleeve closes
+      // onto a FIXED armhole (the cap reaches ~0 instead of dragging a semi-free armhole), then released
+      // for the gravity settle. No-op when there are no cap seams.
+      if (nKc) {
+        const nodeSleeve = new Array(N).fill(false);
+        for (const pr of pieceRanges) if (isSleeveId(pr.piece)) for (let q = 0; q < pr.count; q++) nodeSleeve[pr.start + q] = true;
+        const anchorSet = new Set();
+        for (let k = 0; k < nKc; k++) { const bn = nodeSleeve[kIc[k]] ? kJc[k] : kIc[k]; if (!nodeSleeve[bn]) anchorSet.add(bn); }
+        const anchors = [...anchorSet], savedA = anchors.map((a) => invm[a]);
+        for (const a of anchors) invm[a] = 0;
+        gAccel = 0;
+        for (let k = 0; k < capAttach; k++) {
+          const aCap = Math.exp(lerp(Math.log(capOff), Math.log(closeSeam1), smoothstep(capAttach > 1 ? k / (capAttach - 1) : 1)));
+          substep(settleIters, C.seam1, 0, aCap);   // near-weld: a set-in cap is firmly sewn (ease gathers in the fabric, not at the seam)
+        }
+        for (let i = 0; i < anchors.length; i++) invm[anchors[i]] = savedA[i];
+      }
       let genergy = 0, gconv = false;                      // Phase 2: ease gravity in + settle on the form
       const gRamp = Math.min(40, Math.max(1, Math.round(maxSettle * 0.15)));
       const selfStart = Math.max(0, maxSettle - selfWindow);   // self-collision only in the final window (cheap)
       for (let k = 0; k < maxSettle; k++) {
         selfCollideNow = doSelfCollide && k >= selfStart;
         gAccel = gFull * smoothstep(Math.min(1, k / gRamp));
-        genergy = substep(settleIters, C.seam1, 0);
+        genergy = substep(settleIters, C.seam1, 0, closeSeam1);   // cap already attached → near-weld holds it to the armhole under the sleeve's weight
         if (k > gRamp && genergy < gSettleTol) { gconv = true; break; }
       }
       // seam-closeup: zip the free-hanging side seam shut — harden the seam soft→near-weld while gravity
@@ -596,20 +713,20 @@
       for (let k = 0; k < closeSteps; k++) {
         const s = closeSteps > 1 ? k / (closeSteps - 1) : 1;
         gAccel = gFull * closeGrav;
-        substep(settleIters, Math.exp(lerp(Math.log(closeSeam0), Math.log(closeSeam1), smoothstep(s))), 0);
+        substep(settleIters, Math.exp(lerp(Math.log(closeSeam0), Math.log(closeSeam1), smoothstep(s))), 0, closeSeam1);
       }
       // Phase 3: bounded stretch-to-fit reconciliation under the SAME reduced gravity (so closure wins
       // over gravity tearing the free hem apart). Seam held near-weld; a per-edge stretch ceiling caps each
       // structural edge at (1+maxStretchFrac)·rest, so a too-small garment STRETCHES to bridge (up to the
       // limit, residual stays a flagged gap) not gap silently — and can't explode. Inert on a fitting one.
       gAccel = gFull * closeGrav;
-      for (let k = 0; k < reconcileSteps; k++) { substep(settleIters, closeSeam1, 0); clampStretch(); }
+      for (let k = 0; k < reconcileSteps; k++) { substep(settleIters, closeSeam1, 0, closeSeam1); clampStretch(); }
       // re-settle under FULL gravity so the now-closed garment hangs naturally; seam held stiff so the
       // closure HOLDS (a soft seam here would let full gravity re-open the free hem — the original bug),
       // stretch clamped so the fabric can't elongate to the floor, self-collision on so it stays
       // penetration-free. Re-measures convergence for the mode.
       gAccel = gFull * closeReGrav;
-      for (let k = 0; k < closeReSettle; k++) { genergy = substep(settleIters, closeSeam1, 0); if (reSettleClamp) clampStretch(); }
+      for (let k = 0; k < closeReSettle; k++) { genergy = substep(settleIters, closeSeam1, 0, closeSeam1); if (reSettleClamp) clampStretch(); }
       selfCollideNow = false;
       // "settled" verdict from the BULK's motion (p90 of per-node last-substep move), not the worst node:
       // a self-collision contact can keep ONE node railing at vmax indefinitely (a stable jitter, not an

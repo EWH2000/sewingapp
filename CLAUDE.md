@@ -488,3 +488,20 @@ only DARTS get `selfSeamPairs`, so the sleeve tube is sewn by nothing → route 
 cap quiet, sleeveless regression byte-identical) + `verify-cloth.mjs` tote diff = 0. **Stage B2 (later, optional):**
 analytic capsule ARMS on the dress form (`body-form.js` gated loft + collision, `preview3d.js` render, arm-following
 wrap, `body.bicepMm/wristMm`). Full design + risks in the plan file `~/.claude/plans/can-we-add-a-dazzling-sky.md`.
+
+**SLEEVES — Stage B1 (3D drape beside the torso) WIP-COMMITTED + handed off (2026-06-23).** A sleeved garment now
+DRAPES (all garment-only in `pattern-cloth.js`, `SIM_VERSION 4→5`; bag inflate byte-identical — `verify-cloth.mjs`
+26/26; sleeveless garments unchanged). **Works:** the bodice's own seams stay CLOSED (0mm) with sleeves attached
+(the hard-won fix — cap seams are PHASED into a separate `kIc/kJc` group, held inert during the unpinned stitch-up
+so they don't drag the then-pinned shoulder open, then eased onto the armhole in a zero-g cap-attach after the
+bodice pins); the underarm tube closes (0mm — a non-dart same-piece seam now sews as a `seamPairs` spring); no body
+penetration; eased cap doesn't false-warn (out of the strain gate); sleeves land outside the torso R→+x/L→−x; ~34/44
+cap pairs <15mm. `verify-garment-drape.mjs` now 54 (the working properties locked as a regression guard); full suite
+green; print spine untouched. Deployed for the owner's visual gate. **OPEN PROBLEM:** the cap-SHOULDER join — a
+cluster near the shoulder settles ~100mm off the armhole (the sleeve's hanging weight pulls the cap-top off faster
+than the seam holds it; a stiff mesh can't be dragged back by the boundary seam alone). Ruled out: warm-start
+distance, attach iters, ease level, armhole anchoring (all tested). **Owner's call: build the ARMS (Stage B2) NEXT
+— a limb to drape OVER will make the cap problem visible/solvable AND improve the physics via self-separation (the
+sleeve currently hangs flat against the torso, self-crumpling, hard on the eye).** Stage B1 is committed but NOT
+owner-gated (the cap gap). Deep state + the B2 plan: **`HANDOFF-sleeve-3d.md`** (+ the [[sewing-sleeve-arms-insight]]
+memory). The whole feature lives at `/preview/8` (seeded "Sleeved Tank").

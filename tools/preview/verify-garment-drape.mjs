@@ -225,5 +225,45 @@ console.log("=== surface smoothing (de-jag) lowers roughness, keeps seams closed
   ok(rBig2.strain.overTension === true, "an oversized body still warns despite smoothing (far seam pairs are not snapped)");
 }
 
+console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice intact, tube closes, no penetration ===");
+// NB: the cap↔armhole closure is the OPEN problem (a cluster near the shoulder gaps ~100mm — see
+// HANDOFF-sleeve-3d.md; the fix is Stage B2 arms). This test locks the rest so arm work can't regress it.
+{
+  const G = global.window.PatternGeom;
+  const fArm = G.bodiceArmholes(front), bArm = G.bodiceArmholes(back);
+  const pcs = [front, back], sm = seams.slice();
+  for (const side of ["R", "L"]) {
+    const fA = fArm[side], bA = G.matchedBackArmhole(front, fA.edge, back, bArm, seams) || bArm[side];
+    const rr = G.draftSleeve({ armholeFrontMm: fA.len, armholeBackMm: bA.len, bicepMm: 294, capEaseFrac: 0.06, side });
+    const slv = rr.piece; slv.id = "slv_" + side; pcs.push(slv);
+    sm.push({ a: { piece: slv.id, edge: 3 }, b: { piece: "bf", edge: fA.edge }, ease: 0.06 });
+    sm.push({ a: { piece: slv.id, edge: 2 }, b: { piece: "bb", edge: bA.edge }, ease: 0.06 });
+    sm.push({ a: { piece: slv.id, edge: 1 }, b: { piece: slv.id, edge: 4 } });
+  }
+  ok(window.PatternFold.isStrapPiece(pcs[2], sm) === false, "a sleeve is NOT misclassified as a strap (placeGarment won't skip it)");
+  const rs = Cl.solveDrape(pcs, sm, opts);
+  ok(finite(rs.nodes), "sleeved garment drapes without NaN/Inf");
+  // node → piece
+  const np = new Array(rs.nodes.length).fill("?");
+  rs.pieceRanges.forEach((pr) => { for (let k = 0; k < pr.count; k++) np[pr.start + k] = pr.piece; });
+  ok(rs.pieceRanges.filter((pr) => /slv/.test(pr.piece)).length === 2, "both sleeves are in the drape (not pulled out like straps)");
+  let bodiceGap = 0, underarm = 0;
+  for (const [i, j] of rs.seamLinks || []) {
+    const si = /slv/.test(np[i]), sj = /slv/.test(np[j]);
+    const a = rs.nodes[i], b = rs.nodes[j], d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    if (si && sj) underarm = Math.max(underarm, d);          // sleeve underarm self-seam
+    else if (!si && !sj) bodiceGap = Math.max(bodiceGap, d); // bodice's own seams (must stay closed — the phasing fix)
+  }
+  ok(bodiceGap < 15, `the bodice's own seams stay CLOSED with sleeves attached (${bodiceGap.toFixed(1)}mm — the cap-seam phasing keeps the cap from dragging the shoulder open)`);
+  ok(underarm < 15, `the sleeve underarm self-seam zips the tube shut (${underarm.toFixed(1)}mm — the non-dart same-piece spring)`);
+  const form2 = BF.loft(body);
+  const pen = rs.nodes.reduce((m, p) => Math.max(m, -Math.min(0, BF.signedDist(form2, p))), 0);
+  ok(pen < 14, `no body penetration with sleeves (${pen.toFixed(1)}mm)`);
+  ok(rs.strain.overTension === false, "an eased cap does NOT false-trip the over-tension warning (cap seams are out of the strain gate)");
+  // sleeves land outside the torso on opposite sides (R → +x, L → −x)
+  const sx = (id) => { const pr = rs.pieceRanges.find((p) => p.piece === id); let s = 0; for (let k = 0; k < pr.count; k++) s += rs.nodes[pr.start + k][0]; return s / pr.count; };
+  ok(sx("slv_R") > 50 && sx("slv_L") < -50, `sleeves drape on opposite sides outside the torso (R x̄=${sx("slv_R").toFixed(0)}, L x̄=${sx("slv_L").toFixed(0)})`);
+}
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
