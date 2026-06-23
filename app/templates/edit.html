@@ -32,18 +32,26 @@
       </svg>
     </div>
     <div class="editor__toolbar">
-      <button class="btn" data-action="ed-undo" aria-label="Undo" title="Undo">↶</button>
-      <button class="btn" data-action="ed-redo" aria-label="Redo" title="Redo">↷</button>
-      <button class="btn editor__toggle on" data-action="ed-snap" id="ed-snap">Snap 5 mm</button>
-      <button class="btn editor__toggle" data-action="ed-notch" id="ed-notch" title="Notch mode: tap an edge to add a notch">Notch</button>
-      <button class="btn editor__toggle" data-action="ed-seam" id="ed-seam" title="Sew mode: tap an edge on one piece, then a matching edge on another, to join them">Sew</button>
-      <button class="btn editor__toggle" data-action="ed-curve" id="ed-curve" title="Curve mode: tap a straight edge to bow it (neckline, armhole, A-line)">Curve</button>
-      <button class="btn editor__toggle" data-action="ed-dart" id="ed-dart" title="Dart mode: tap an edge to add a shaping dart, drag its tip to set depth">Dart</button>
-      <button class="btn" data-action="ed-delete" title="Delete the selected corner">Delete point</button>
+      <div class="editor__tools" role="group" aria-label="Tool">
+        <button class="btn editor__seg editor__toggle on" data-action="ed-select" id="ed-select" title="Select & edit: drag corners, tap an edge to add a point">Select</button>
+        <button class="btn editor__seg editor__toggle" data-action="ed-notch" id="ed-notch" title="Notch mode: tap an edge to add a notch">Notch</button>
+        <button class="btn editor__seg editor__toggle" data-action="ed-seam" id="ed-seam" title="Sew mode: tap an edge on one piece, then a matching edge on another, to join them">Sew</button>
+        <button class="btn editor__seg editor__toggle" data-action="ed-curve" id="ed-curve" title="Curve mode: tap a straight edge to bow it (neckline, armhole, A-line)">Curve</button>
+        <button class="btn editor__seg editor__toggle" data-action="ed-dart" id="ed-dart" title="Dart mode: tap an edge to add a shaping dart, drag its tip to set depth">Dart</button>
+      </div>
+      <div class="editor__history" role="group" aria-label="History">
+        <button class="btn" data-action="ed-undo" aria-label="Undo" title="Undo">↶</button>
+        <button class="btn" data-action="ed-redo" aria-label="Redo" title="Redo">↷</button>
+      </div>
+      <div class="editor__util">
+        <button class="btn editor__toggle on" data-action="ed-snap" id="ed-snap">Snap 5 mm</button>
+        <button class="btn" data-action="ed-delete" title="Delete the selected corner">Delete point</button>
+        <button class="btn" data-action="ed-fit" title="Zoom out to the whole bag">Show all</button>
+      </div>
       <span class="editor__spacer"></span>
       <span class="editor__readout" id="ed-readout"></span>
-      <button class="btn" data-action="ed-fit" title="Zoom out to the whole bag">Show all</button>
     </div>
+    <div class="editor__hintbar" id="ed-modehint">Select &amp; edit — drag a corner, tap an edge to add a point, type an exact size.</div>
   </div>
 
   <!-- control rail -->

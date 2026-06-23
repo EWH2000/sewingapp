@@ -12,37 +12,70 @@
   src: url('../fonts/hanken-grotesk.woff2') format('woff2');
   font-weight: 300 800; font-display: swap;
 }
+/* Tailor's caliper readout — measurements & dimensions. Falls back to the
+   system monospace stack if the woff2 isn't present, so it's safe to ship. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../fonts/ibm-plex-mono.woff2') format('woff2');
+  font-weight: 400 600; font-display: swap;
+}
 
+/* ── Atelier theme ──────────────────────────────────────────────────────────
+   "Two rooms, one palette." The working surfaces (Home / Draw / Settings) are
+   the warm light *cutting table*; the 3D preview is the dark *studio showroom*
+   (scoped under .pv in preview.html). The brass accent has two oxidations:
+   #9a7430 (legible on light paper, here) and #c8a86b (glows on dark, in .pv).
+   The component CSS below reads the legacy house names (--bg/--surface/--accent
+   …), so re-skinning the whole app is just re-pointing those names at the
+   atelier values — no component selectors change. */
 :root {
-  --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f1efe9;
-  --ink:#1b1d21; --muted:#6b7079; --accent:#e0653a; --accent-ink:#ffffff;
-  --border:#e7e4dd; --radius:16px;
-  --shadow:0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05);
-  --good:#1f9d6b; --warn:#d8861f; --bad:#d8483f;
+  /* Atelier palette — the source of truth */
+  --paper:#efe9dd;          /* page ground — the table */
+  --paper-edge:#e6dfd0;     /* recessed troughs / wells (the gallery) */
+  --card:#fbf8f1;           /* pattern-tissue cards & panels */
+  --ink:#21201c;            /* warm near-black text (~15:1 on card) */
+  --muted:#6f685c;          /* labels, helper copy */
+  --brass:#9a7430;          /* signature accent — antique brass on light */
+  --brass-tint:#e9dcc0;     /* selected / hover washes, the "new" chip */
+  --leather:#8a5a36;        /* warm secondary accent */
+  --line:#ddd3c0;           /* warm pencil-line hairline */
+
+  /* Type roles */
+  --font-disp:'Bricolage Grotesque','Hanken Grotesk',sans-serif;
+  --font-body:'Hanken Grotesk',system-ui,-apple-system,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  /* Large-first scale (rem on an 18px root) */
+  --fs-hero:3rem; --fs-h1:2.1rem; --fs-h2:1.55rem; --fs-h3:1.25rem;
+  --fs-body:1.0625rem; --fs-label:1rem;
+
+  /* Legacy house names → atelier values (every component rule reads these) */
+  --bg:var(--paper); --surface:var(--card); --surface-2:#efe7d7;
+  --accent:var(--brass); --accent-ink:#ffffff; --border:var(--line);
+  --radius:14px;
+  --shadow:0 1px 2px rgba(40,30,10,.05), 0 8px 24px rgba(60,45,20,.07);
+  --good:#2f7d52; --warn:#b07219; --bad:#b3402f;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg:#16181c; --surface:#1f2228; --surface-2:#262a31;
-    --ink:#ececec; --muted:#9aa0a8; --accent:#ff7a4d; --accent-ink:#1b1d21;
-    --border:#2b2f36;
-    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35);
-    --good:#4cc795; --warn:#e0a64a; --bad:#ef6a52;
-  }
-}
+/* Always warm light — the cutting-table identity is the intended experience and
+   reads best for someone wearing glasses; we don't invert to a generic OS dark
+   (the dark *showroom* lives in the .pv scope and is independent of this). */
+:root { color-scheme: light; }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* Large-first base — 18px root lifts everything toward legible (glasses-friendly). */
+html { -webkit-text-size-adjust: 100%; font-size:18px; }
 body {
-  margin:0; font-family:'Hanken Grotesk', system-ui, -apple-system, sans-serif;
-  background:var(--bg); color:var(--ink); line-height:1.5;
+  margin:0; font-family:var(--font-body);
+  background:var(--bg); color:var(--ink); line-height:1.55; font-size:var(--fs-body);
   -webkit-font-smoothing:antialiased;
   padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
-h1, h2, h3, .brand { font-family:'Bricolage Grotesque','Hanken Grotesk', sans-serif; }
-h1 { font-size:1.5rem; margin:0 0 .2em; letter-spacing:-.01em; }
-h2 { font-size:1.15rem; margin:1.6rem 0 .6rem; }
+h1, h2, h3, .brand { font-family:var(--font-disp); }
+h1 { font-size:var(--fs-h1); margin:0 0 .2em; letter-spacing:-.015em; line-height:1.1; }
+h2 { font-size:var(--fs-h2); margin:1.6rem 0 .6rem; letter-spacing:-.01em; }
+h3 { font-size:var(--fs-h3); }
 a { color:var(--accent); text-decoration:none; }
 em { font-style:normal; font-weight:700; }
+.mono { font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
 
 .topbar {
   display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -60,7 +93,12 @@ em { font-style:normal; font-weight:700; }
 }
 .home-pill svg { width:18px; height:18px; }
 
-.wrap { max-width:720px; margin:0 auto; padding:16px; }
+/* Desktop primary nav — lives in the top bar, hidden on phones (the bottom
+   tab bar serves there). The "✂ Sewing" brand is the in-app home; the
+   home-pill is the house hub. */
+.topnav { display:none; }
+
+.wrap { max-width:720px; margin:0 auto; padding:16px 20px; }
 
 .tabbar {
   position:fixed; left:0; right:0; bottom:0; z-index:30;
@@ -78,6 +116,29 @@ em { font-style:normal; font-weight:700; }
 }
 .tabbar a svg { width:23px; height:23px; }
 .tabbar a.on { color:var(--accent); }
+
+/* ── Desktop: top-bar nav replaces the phone tab bar ─────────────────────── */
+@media (min-width:900px) {
+  body { padding-bottom:32px; }
+  .tabbar { display:none; }
+  .topnav { display:flex; align-items:center; gap:6px; margin-left:auto; }
+  .topnav a {
+    display:inline-flex; align-items:center; min-height:46px; padding:9px 20px;
+    border-radius:999px; font-weight:600; font-size:var(--fs-label); color:var(--muted);
+    transition:color .14s ease, background .14s ease;
+  }
+  .topnav a:hover { color:var(--ink); background:var(--surface-2); }
+  .topnav a.on { color:var(--ink); background:var(--brass-tint); box-shadow:inset 0 -2px 0 var(--brass); }
+  /* the hub pill sits to the right of the nav, not pushed to the far edge */
+  .topbar { gap:18px; }
+  .topbar .home-pill { margin-left:0; }
+  .statusbar { bottom:32px; }
+  /* Home / Settings reading column uses the width instead of a thin ribbon. */
+  .wrap { max-width:clamp(760px, 90vw, 1280px); padding:28px 32px 40px; }
+}
+@media (min-width:1440px) {
+  .wrap { max-width:1360px; }
+}
 
 .card {
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
@@ -100,13 +161,16 @@ em { font-style:normal; font-weight:700; }
 
 .btn {
   display:inline-flex; align-items:center; justify-content:center; gap:8px;
-  min-height:48px; padding:12px 18px; border-radius:12px; font:inherit; font-weight:700;
+  min-height:56px; padding:14px 22px; border-radius:12px; font:inherit; font-weight:700;
   cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--ink);
+  transition:background .14s ease, border-color .14s ease, transform .06s ease;
 }
+.btn:hover { border-color:color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .btn--primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.btn--primary:hover { background:color-mix(in srgb, var(--accent) 88%, #000); border-color:transparent; }
 .btn--ghost { background:transparent; }
 .btn--block { width:100%; }
-.btn.small { min-height:36px; padding:6px 12px; font-size:.85rem; }
+.btn.small { min-height:40px; padding:8px 14px; font-size:.9rem; }
 .btn:active { transform:translateY(1px); }
 .btnrow { display:flex; gap:10px; }
 .btnrow .btn { flex:1; }
@@ -114,11 +178,16 @@ em { font-style:normal; font-weight:700; }
 label.fld { display:block; margin-bottom:14px; }
 label.fld > span { display:block; font-weight:600; font-size:.9rem; margin-bottom:6px; }
 input[type=text], input[type=number], select {
-  width:100%; padding:12px 14px; min-height:48px;
+  width:100%; padding:14px 16px; min-height:56px;
   border:1px solid var(--border); border-radius:12px;
   background:var(--surface); color:var(--ink); font:inherit;
 }
+/* measurement fields read as a caliper readout */
+input[type=number] { font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
 input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+/* The dark "showroom" (preview) has its own compact floating controls — keep the
+   large working-surface touch sizing from inflating them. */
+.pv input, .pv select { min-height:0; }
 
 /* ── status bar (above the tab bar) ─────────────────────────────────────── */
 .statusbar {
@@ -146,6 +215,124 @@ input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow
 }
 .sheet__msg { margin:0 0 14px; font-weight:600; }
 
+/* ── Home — the cutting-table dashboard ──────────────────────────────────── */
+.hero {
+  display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between;
+  gap:20px 36px; margin-bottom:14px;
+}
+.hero__intro { flex:1 1 360px; min-width:0; }
+.hero__title { font-size:var(--fs-hero); line-height:1.03; margin:0 0 .12em; letter-spacing:-.02em; }
+.hero__sub { margin:0; color:var(--muted); font-size:1.15rem; max-width:34ch; }
+
+/* Printer "press" plate — pattern-envelope style, brass top hairline */
+.press {
+  flex:0 1 330px; align-self:flex-start;
+  background:var(--card); border:1px solid var(--border); border-top:2px solid var(--brass);
+  border-radius:10px; padding:14px 16px; box-shadow:var(--shadow);
+}
+.press__head { font-family:var(--font-disp); text-transform:uppercase; letter-spacing:.2em; font-size:.78rem; color:var(--muted); margin-bottom:9px; }
+.press__state { display:flex; align-items:center; gap:9px; font-weight:600; }
+.press__dot { width:10px; height:10px; border-radius:50%; background:var(--muted); flex:none; }
+.press__dot.is-good { background:var(--good); }
+.press__dot.is-warn { background:var(--warn); }
+.press__addr { color:var(--muted); font-size:.85rem; margin:7px 0 11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.press__actions { display:flex; gap:8px; flex-wrap:wrap; }
+.press__hint { color:var(--muted); font-size:.92rem; line-height:1.45; margin:11px 0 10px; }
+
+/* The signature: a brass measuring-tape rule */
+.tape {
+  position:relative; height:20px; margin:6px 0 28px; border-radius:3px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--brass) 88%, #fff), var(--brass) 55%, color-mix(in srgb, var(--brass) 78%, #000));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3), var(--shadow);
+}
+.tape::after {            /* minor ticks */
+  content:""; position:absolute; left:6px; right:6px; bottom:0; height:7px;
+  background:repeating-linear-gradient(90deg, rgba(28,21,8,.5) 0 1px, transparent 1px 14.4px);
+}
+.tape::before {           /* major ticks */
+  content:""; position:absolute; left:6px; right:6px; bottom:0; height:12px;
+  background:repeating-linear-gradient(90deg, rgba(28,21,8,.62) 0 1.5px, transparent 1.5px 72px);
+}
+
+.section { margin:0 0 34px; }
+.section__head {
+  font-size:var(--fs-h2); margin:0 0 18px; display:inline-block;
+  padding-bottom:6px; border-bottom:2px solid var(--brass);
+}
+
+/* Create tiles */
+.tiles { display:grid; grid-template-columns:1fr; gap:18px; align-items:start; }
+@media (min-width:760px) { .tiles { grid-template-columns:repeat(3,1fr); } }
+.tile {
+  position:relative; display:flex; flex-direction:column; gap:7px;
+  background:var(--card); border:1px solid var(--border); border-top:2px solid var(--brass);
+  border-radius:12px; padding:22px; box-shadow:var(--shadow); color:var(--ink);
+}
+.tile--draw { text-decoration:none; transition:border-color .14s ease, transform .08s ease; }
+.tile--draw:hover { border-color:var(--brass); }
+.tile--draw:active { transform:translateY(1px); }
+.tile__glyph { width:42px; height:42px; color:var(--brass); margin-bottom:2px; }
+.tile__glyph svg { width:100%; height:100%; }
+.tile__head { font-family:var(--font-disp); font-size:var(--fs-h3); font-weight:650; }
+.tile__sub { color:var(--muted); font-size:1rem; line-height:1.45; }
+.tile__chip { position:absolute; top:18px; right:18px; }
+/* builder tiles expand their form in place */
+.tile--builder { padding:0; }
+.tile__summary { display:flex; flex-direction:column; gap:7px; padding:22px; cursor:pointer; list-style:none; }
+.tile__summary::-webkit-details-marker { display:none; }
+.tile--builder[open] { border-color:var(--brass); }
+.tile--builder[open] .tile__summary { padding-bottom:6px; }
+.tile__form { padding:4px 22px 22px; }
+.tile__form .fld { margin-bottom:12px; }
+.tile__keep { margin-top:10px; }
+
+/* Saved-pattern gallery on a recessed "cutting mat" */
+.gallery-trough {
+  background:var(--paper-edge); border:1px solid var(--border);
+  border-radius:14px; padding:18px;
+}
+.gallery { display:grid; gap:18px; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); }
+@media (min-width:760px) { .gallery { grid-template-columns:repeat(auto-fill, minmax(264px,1fr)); } }
+.pcard {
+  position:relative; display:flex; flex-direction:column;
+  background:var(--card); border:1px solid var(--border); border-top:2px solid var(--brass);
+  border-radius:12px; padding:14px; box-shadow:var(--shadow);
+}
+.pcard__del {
+  position:absolute; top:9px; right:9px; z-index:2;
+  width:34px; height:34px; min-height:0; padding:0; border-radius:50%;
+  border:1px solid var(--border); background:var(--card); color:var(--muted);
+  font-size:1rem; line-height:1; cursor:pointer;
+}
+.pcard__del:hover { color:var(--bad); border-color:var(--bad); }
+.pcard__thumb {
+  height:152px; border-radius:8px; background:var(--paper-edge);
+  display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:12px;
+}
+.pcard__placeholder { width:46px; height:46px; border:2px dashed var(--border); border-radius:6px; }
+.pcard__thumb.is-drawn { background:#fdfcf8; }
+.thumb-svg { width:100%; height:100%; padding:12px; display:block; }
+.thumb-cut { stroke:var(--ink); stroke-width:1.7px; stroke-linejoin:round; }
+.thumb-seam { stroke:var(--muted); stroke-width:1px; stroke-dasharray:3 3; opacity:.65; }
+.pcard__name { margin:0 0 2px; font-size:1.1rem; line-height:1.2; }
+.pcard__meta { color:var(--muted); font-size:.85rem; }
+.pcard__actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+
+.empty-table { text-align:center; padding:40px 24px; color:var(--muted); }
+.empty-table__art { width:170px; height:auto; color:var(--brass); opacity:.7; margin-bottom:6px; }
+.empty-table__title { font-size:var(--fs-h3); color:var(--ink); margin:0 0 6px; }
+.empty-table__body { max-width:48ch; margin:0 auto; font-size:1.05rem; line-height:1.5; }
+
+/* shared "plate" hairline (the brass envelope edge) */
+.card--plate { border-top:2px solid var(--brass); }
+
+/* ── Settings ────────────────────────────────────────────────────────────── */
+.settings-sub { font-size:1.1rem; margin:0 0 22px; }
+.settings-grid { display:grid; grid-template-columns:1fr; gap:24px; }
+@media (min-width:900px) { .settings-grid { grid-template-columns:1fr 1fr; align-items:start; } }
+.settings-scale { margin-top:0; font-size:1.05rem; line-height:1.5; }
+.settings-scale.is-good strong { color:var(--good); }
+
 /* ── freeform editor ─────────────────────────────────────────────────────── */
 /* Widescreen: break out of the 720px reading column to use the full width. */
 .wrap--editor { max-width:1600px; }
@@ -170,12 +357,22 @@ input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow
   -webkit-touch-callout:none; cursor:crosshair;
 }
 .editor__toolbar {
-  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-  padding:10px 12px; border-top:1px solid var(--border); background:var(--surface-2);
+  display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  padding:11px 12px; border-top:1px solid var(--border); background:var(--surface-2);
 }
-.editor__toolbar .btn { min-height:40px; padding:8px 12px; }
+.editor__toolbar .btn { min-height:48px; padding:10px 15px; font-size:1rem; }
+.editor__history, .editor__util { display:inline-flex; gap:8px; flex-wrap:wrap; }
 .editor__spacer { flex:1 1 auto; }
 .editor__toggle.on { background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 34%, transparent); }
+/* The tool switcher — one connected segmented control; active mode = brass fill. */
+.editor__tools { display:inline-flex; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.editor__tools .editor__seg { min-height:48px; border:0; border-right:1px solid var(--border); border-radius:0; background:var(--card); font-weight:700; }
+.editor__tools .editor__seg:last-child { border-right:0; }
+.editor__tools .editor__seg.on { background:var(--accent); color:var(--accent-ink); }
+.editor__hintbar {
+  padding:9px 14px; border-top:1px solid var(--border); background:var(--surface-2);
+  color:var(--muted); font-size:.95rem; line-height:1.4;
+}
 .editor__readout {
   font-variant-numeric:tabular-nums; font-weight:600; font-size:.85rem; color:var(--muted);
   white-space:nowrap;
@@ -196,16 +393,26 @@ input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow
 .piece-row__name { font-weight:700; font-size:.95rem; }
 .piece-row__meta { font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums; }
 
-/* Two-column workspace once there's room (iPad landscape + laptops/desktops):
-   a big canvas beside a fixed control rail, the whole thing fitting the viewport
-   so every parameter is visible without scrolling. */
-@media (min-width:860px) {
+/* Distinct context panel — where she types exact sizes; a brass edge + warm
+   tint sets it apart from the static cards. */
+#ed-numeric { border-left:3px solid var(--brass); background:color-mix(in srgb, var(--brass) 5%, var(--card)); }
+
+/* Two-column workspace once there's real room (laptops/desktops). Held back to
+   1024px so a portrait tablet keeps the roomy stacked layout instead of a cramped
+   rail. The rail widens with the screen; the whole thing fits the viewport. */
+@media (min-width:1024px) {
+  .wrap--editor { padding:16px 24px 22px; }
   .edit-layout {
-    grid-template-columns:minmax(0,1fr) 340px;
+    grid-template-columns:minmax(0,1fr) 360px;
     align-items:stretch;
-    height:calc(100vh - 210px);
+    height:calc(100dvh - 165px);
   }
   .edit-canvas { height:100%; }
   .editor__stage { height:auto; flex:1 1 auto; min-height:0; }
-  .edit-rail { height:100%; overflow:auto; }
+  .edit-rail { height:100%; overflow:auto; gap:14px; }
+  .edit-rail .card { padding:18px; }
+  /* keep Print / Save reachable without scrolling the tall rail */
+  .edit-rail .edit-actions { position:sticky; bottom:0; box-shadow:0 -10px 18px -10px rgba(60,45,20,.22); }
 }
+@media (min-width:1440px) { .edit-layout { grid-template-columns:minmax(0,1fr) 400px; } }
+@media (min-width:1760px) { .edit-layout { grid-template-columns:minmax(0,1fr) 440px; } }

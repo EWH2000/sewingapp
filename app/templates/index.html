@@ -1,117 +1,163 @@
 {% extends "base.html" %}
 {% block title %}Sewing{% endblock %}
+{% block head_extra %}
+  <!-- thumbnails only: pure geometry (degrades without Maker.js), no three.js -->
+  <script src="{{ base_path }}/static/js/pattern-geom.js?v={{ asset_ver }}" defer></script>
+  <script src="{{ base_path }}/static/js/pattern-thumb.js?v={{ asset_ver }}" defer></script>
+{% endblock %}
 {% block content %}
 
-<h1>Sewing</h1>
-<p class="muted">Make a pattern, then print it at home at exact 1:1 scale or save it for later.</p>
+<!-- ── Hero: the welcome + the printer "press" plate ─────────────────────── -->
+<section class="hero">
+  <div class="hero__intro">
+    <h1 class="hero__title">Your cutting table</h1>
+    <p class="hero__sub">Make a pattern, print it true to size, or pick up where you left off.</p>
+  </div>
 
-<!-- Printer + calibration status -->
-<div class="card">
-  <div class="row row--between">
-    <strong>Printer</strong>
+  <aside class="press" aria-label="Printer">
+    <div class="press__head">Press</div>
     {% if printer_uri %}
-      {% if calibrated %}<span class="chip chip--accent">calibrated ✓</span>
-      {% else %}<span class="chip" style="color:var(--warn)">test page needed</span>{% endif %}
-    {% else %}<span class="chip" style="color:var(--warn)">not set up</span>{% endif %}
-  </div>
-  {% if printer_uri %}
-    <p class="small muted" style="margin:.4rem 0 .8rem">{{ printer_uri }}</p>
-    <div class="btnrow">
-      <button class="btn" data-action="test-page">Print test page</button>
-      {% if not calibrated %}<button class="btn btn--ghost" data-action="mark-calibrated">It measured right</button>{% endif %}
-    </div>
-    {% if not calibrated %}
-    <p class="small muted" style="margin-top:.7rem">Print the test page, measure the 1-inch square / 6-inch ruler with a real ruler. If it's exact, tap <em>It measured right</em> — then patterns can print. Printing at 100% / Actual Size is automatic.</p>
+      {% if calibrated %}
+        <div class="press__state"><span class="press__dot is-good"></span> Calibrated — prints true to size.</div>
+      {% else %}
+        <div class="press__state"><span class="press__dot is-warn"></span> Test page needed</div>
+      {% endif %}
+      <div class="press__addr mono" title="{{ printer_uri }}">{{ printer_uri }}</div>
+      <div class="press__actions">
+        <button class="btn small" data-action="test-page">Print test page</button>
+        {% if not calibrated %}<button class="btn btn--primary small" data-action="mark-calibrated">It measured right</button>{% endif %}
+      </div>
+      {% if not calibrated %}
+      <p class="press__hint">Print it, measure the 1-inch square / 6-inch ruler with a real ruler. If it's exact, tap <em>It measured right</em> — then patterns can print.</p>
+      {% endif %}
+    {% else %}
+      <div class="press__state"><span class="press__dot"></span> Not set up</div>
+      <p class="press__hint">Add your printer to start printing.</p>
+      <a class="btn btn--primary small" href="{{ base_path }}/settings">Set up the printer</a>
     {% endif %}
-  {% else %}
-    <p class="small muted" style="margin:.5rem 0">Add your printer to start printing.</p>
-    <a class="btn btn--primary" href="{{ base_path }}/settings">Set up the printer</a>
-  {% endif %}
-</div>
+  </aside>
+</section>
 
-<!-- New pattern -->
-<h2>New pattern</h2>
+<!-- the signature: a brass measuring-tape rule, the hinge into the work -->
+<div class="tape" role="presentation" aria-hidden="true"></div>
 
-<!-- Draw your own (freeform editor) -->
-<a class="card row row--between" href="{{ base_path }}/edit" style="text-decoration:none;color:inherit">
-  <div>
-    <strong>Draw your own</strong>
-    <p class="small muted" style="margin:.3rem 0 0">Sketch a custom shape — drag points, snap to a grid, type exact sizes.</p>
-  </div>
-  <span class="chip chip--accent">new</span>
-</a>
+<!-- ── Start something new ───────────────────────────────────────────────── -->
+<section class="section">
+  <h2 class="section__head">Start something new</h2>
+  <div class="tiles">
 
-<!-- Boxy tote template -->
-<form class="card" id="tote-form" onsubmit="return false">
-  <strong>Boxy tote</strong>
-  <p class="small muted" style="margin:.3rem 0 .9rem">A flat-bottomed tote — front, back, two sides, a base, and two straps, each with seam allowance and a stitch line. Enter the <em>finished</em> bag size.</p>
-  <label class="fld"><span>Name</span><input type="text" id="tote-name" placeholder="e.g. Market tote"></label>
-  <div class="grid2">
-    <label class="fld"><span>Width</span><input type="number" id="tote-w" min="0" step="any" inputmode="decimal" placeholder="14"></label>
-    <label class="fld"><span>Height</span><input type="number" id="tote-h" min="0" step="any" inputmode="decimal" placeholder="16"></label>
-  </div>
-  <div class="grid2">
-    <label class="fld"><span>Depth</span><input type="number" id="tote-d" min="0" step="any" inputmode="decimal" placeholder="5"></label>
-    <label class="fld"><span>Seam allowance</span><input type="number" id="tote-sa" min="0" step="any" inputmode="decimal" value="0.4"></label>
-  </div>
-  <div class="grid2">
-    <label class="fld"><span>Strap length</span><input type="number" id="tote-sl" min="0" step="any" inputmode="decimal" placeholder="24"></label>
-    <label class="fld"><span>Strap width</span><input type="number" id="tote-sw" min="0" step="any" inputmode="decimal" placeholder="1"></label>
-  </div>
-  <label class="fld" style="margin-bottom:14px"><span>Units</span>
-    <select id="tote-unit"><option value="in">inches</option><option value="cm">centimetres</option></select>
-  </label>
-  <div class="btnrow">
-    <button class="btn btn--primary" data-action="tote-print">Print at home</button>
-    <button class="btn" data-action="tote-download">Download PDF</button>
-  </div>
-  <button class="btn btn--ghost btn--block" data-action="tote-save" style="margin-top:10px">Save for later</button>
-</form>
+    <a class="tile tile--draw" href="{{ base_path }}/edit">
+      <span class="tile__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 18 L8 7 L17 10 L13 20 Z"/><path d="M14 4l4 4-2.5 2.5"/>
+        </svg>
+      </span>
+      <span class="tile__head">Draw your own</span>
+      <span class="tile__sub">Sketch a shape — drag the corners, snap to a grid, type exact sizes.</span>
+      <span class="chip chip--accent tile__chip">new</span>
+    </a>
 
-<!-- Simple rectangle (secondary) -->
-<details class="card" style="padding:0">
-  <summary style="padding:16px;font-weight:700;cursor:pointer;list-style:none">Simple rectangle &nbsp;<span class="small muted">— a single sized panel</span></summary>
-  <form id="rect-form" onsubmit="return false" style="padding:0 16px 16px">
-    <label class="fld"><span>Name</span><input type="text" id="rect-name" placeholder="e.g. Side panel"></label>
-    <div class="grid2">
-      <label class="fld"><span>Width</span><input type="number" id="rect-w" min="0" step="any" inputmode="decimal" placeholder="12"></label>
-      <label class="fld"><span>Height</span><input type="number" id="rect-h" min="0" step="any" inputmode="decimal" placeholder="15"></label>
-    </div>
-    <label class="fld"><span>Units</span>
-      <select id="rect-unit"><option value="in">inches</option><option value="cm">centimetres</option></select>
-    </label>
-    <div class="btnrow">
-      <button class="btn btn--primary" data-action="rect-print">Print at home</button>
-      <button class="btn" data-action="rect-download">Download PDF</button>
-    </div>
-    <button class="btn btn--ghost btn--block" data-action="rect-save" style="margin-top:10px">Save for later</button>
-  </form>
-</details>
-
-<!-- Saved patterns -->
-<h2>Saved patterns</h2>
-{% if patterns %}
-  <div class="stack">
-  {% for p in patterns %}
-    <div class="card" data-pattern-id="{{ p.id }}">
-      <div class="row row--between">
-        <div>
-          <strong>{{ p.name }}</strong>
-          <div class="small muted">{{ p.kind }}</div>
+    <details class="tile tile--builder" id="tote-tile">
+      <summary class="tile__summary">
+        <span class="tile__glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 9h14l-1 11H6Z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/>
+          </svg>
+        </span>
+        <span class="tile__head">Boxy tote</span>
+        <span class="tile__sub">Front, back, two sides, a base, and straps — each with seam allowance.</span>
+      </summary>
+      <form class="tile__form" id="tote-form" onsubmit="return false">
+        <label class="fld"><span>Name</span><input type="text" id="tote-name" placeholder="e.g. Market tote"></label>
+        <div class="grid2">
+          <label class="fld"><span>Width</span><input type="number" id="tote-w" min="0" step="any" inputmode="decimal" placeholder="14"></label>
+          <label class="fld"><span>Height</span><input type="number" id="tote-h" min="0" step="any" inputmode="decimal" placeholder="16"></label>
         </div>
-        <button class="btn btn--ghost small" data-action="saved-delete" aria-label="Delete">✕</button>
-      </div>
-      <div class="btnrow" style="margin-top:10px">
-        <button class="btn btn--primary" data-action="saved-print">Print</button>
-        <button class="btn" data-action="saved-download">Download</button>
-        {% if p.kind in ('freeform', 'rectangle', 'box') %}<button class="btn" data-action="saved-edit">Edit</button>{% endif %}
-        {% if p.kind in ('freeform', 'box') %}<button class="btn" data-action="saved-preview">Preview</button>{% endif %}
-      </div>
-    </div>
-  {% endfor %}
+        <div class="grid2">
+          <label class="fld"><span>Depth</span><input type="number" id="tote-d" min="0" step="any" inputmode="decimal" placeholder="5"></label>
+          <label class="fld"><span>Seam allowance</span><input type="number" id="tote-sa" min="0" step="any" inputmode="decimal" value="0.4"></label>
+        </div>
+        <div class="grid2">
+          <label class="fld"><span>Strap length</span><input type="number" id="tote-sl" min="0" step="any" inputmode="decimal" placeholder="24"></label>
+          <label class="fld"><span>Strap width</span><input type="number" id="tote-sw" min="0" step="any" inputmode="decimal" placeholder="1"></label>
+        </div>
+        <label class="fld"><span>Units</span>
+          <select id="tote-unit"><option value="in">inches</option><option value="cm">centimetres</option></select>
+        </label>
+        <div class="btnrow">
+          <button class="btn btn--primary" data-action="tote-print">Print it</button>
+          <button class="btn" data-action="tote-download">Save a PDF</button>
+        </div>
+        <button class="btn btn--ghost btn--block tile__keep" data-action="tote-save">Keep this</button>
+      </form>
+    </details>
+
+    <details class="tile tile--builder" id="rect-tile">
+      <summary class="tile__summary">
+        <span class="tile__glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="6" width="14" height="12" rx="1"/>
+          </svg>
+        </span>
+        <span class="tile__head">Rectangle</span>
+        <span class="tile__sub">A single sized panel.</span>
+      </summary>
+      <form class="tile__form" id="rect-form" onsubmit="return false">
+        <label class="fld"><span>Name</span><input type="text" id="rect-name" placeholder="e.g. Side panel"></label>
+        <div class="grid2">
+          <label class="fld"><span>Width</span><input type="number" id="rect-w" min="0" step="any" inputmode="decimal" placeholder="12"></label>
+          <label class="fld"><span>Height</span><input type="number" id="rect-h" min="0" step="any" inputmode="decimal" placeholder="15"></label>
+        </div>
+        <label class="fld"><span>Units</span>
+          <select id="rect-unit"><option value="in">inches</option><option value="cm">centimetres</option></select>
+        </label>
+        <div class="btnrow">
+          <button class="btn btn--primary" data-action="rect-print">Print it</button>
+          <button class="btn" data-action="rect-download">Save a PDF</button>
+        </div>
+        <button class="btn btn--ghost btn--block tile__keep" data-action="rect-save">Keep this</button>
+      </form>
+    </details>
+
   </div>
-{% else %}
-  <div class="empty">No saved patterns yet. Make one above and tap <em>Save for later</em>.</div>
-{% endif %}
+</section>
+
+<!-- ── Your patterns ─────────────────────────────────────────────────────── -->
+<section class="section">
+  <h2 class="section__head">Your patterns</h2>
+  <div class="gallery-trough">
+  {% if patterns %}
+    <div class="gallery">
+    {% for p in patterns %}
+      <article class="pcard" data-pattern-id="{{ p.id }}">
+        <button class="pcard__del" data-action="saved-delete" aria-label="Remove">✕</button>
+        <div class="pcard__thumb" data-thumb><span class="pcard__placeholder" aria-hidden="true"></span></div>
+        <div class="pcard__body">
+          <h3 class="pcard__name">{{ p.name }}</h3>
+          <div class="pcard__meta mono" data-meta>{{ p.kind }}</div>
+        </div>
+        <div class="pcard__actions">
+          <button class="btn btn--primary small" data-action="saved-print">Print</button>
+          <button class="btn small" data-action="saved-download">PDF</button>
+          {% if p.kind in ('freeform', 'rectangle', 'box') %}<button class="btn small" data-action="saved-edit">Edit</button>{% endif %}
+          {% if p.kind in ('freeform', 'box') %}<button class="btn small" data-action="saved-preview">Preview</button>{% endif %}
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-table">
+      <svg class="empty-table__art" viewBox="0 0 120 70" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <rect x="12" y="14" width="34" height="42" rx="2"/>
+        <path d="M58 18h40M58 18v34h40V18"/>
+        <path d="M8 62h104" stroke-dasharray="2 4"/>
+        <path d="M20 62v-4M44 62v-4M68 62v-4M92 62v-4"/>
+      </svg>
+      <h3 class="empty-table__title">Nothing on the table yet.</h3>
+      <p class="empty-table__body">Pick a starting point above — draw your own shape, or measure up a boxy tote. Keep it here and it'll be waiting next time.</p>
+    </div>
+  {% endif %}
+  </div>
+</section>
 
 {% endblock %}

@@ -1048,7 +1048,18 @@
   }
   // ── draw-mode exclusivity (notch / sew / curve / dart are mutually exclusive) ─────────────────
   const MODES = ["notchMode", "sewMode", "curveMode", "dartMode"];
-  function syncModeChips() { updateNotchChip(); updateSewChip(); updateCurveChip(); updateDartChip(); }
+  function noModeOn() { return !state.notchMode && !state.sewMode && !state.curveMode && !state.dartMode; }
+  function updateSelectChip() { const c = $("#ed-select"); if (c) c.classList.toggle("on", noModeOn()); }
+  function updateModeHint() {
+    const el = $("#ed-modehint"); if (!el) return;
+    el.textContent =
+      state.notchMode ? "Notch — tap an edge to add a notch; tap a notch to remove it."
+      : state.sewMode  ? "Sew — tap an edge on one piece, then a matching edge on another, to join them."
+      : state.curveMode ? "Curve — tap a straight edge to bow it; drag the blue dot to shape it."
+      : state.dartMode ? "Dart — tap an edge to add a dart; drag the pink dot to set its depth."
+      : "Select & edit — drag a corner, tap an edge to add a point, type an exact size.";
+  }
+  function syncModeChips() { updateNotchChip(); updateSewChip(); updateCurveChip(); updateDartChip(); updateSelectChip(); updateModeHint(); }
   // Turn mode m on (clearing the other three), or all-off if m was already on (toggle). One source of
   // truth so chips never desync; any switch abandons a pending sew. render() because overlays read mode.
   function setMode(m) {
@@ -1392,6 +1403,7 @@
         case "ed-redo": redo(); break;
         case "ed-snap": state.snapOn = !state.snapOn; updateSnapChip(); break;
         case "ed-garment": toggleGarment(); break;
+        case "ed-select": setMode(null); break;
         case "ed-notch": toggleNotch(); break;
         case "ed-seam": toggleSew(); break;
         case "ed-curve": toggleCurve(); break;
@@ -1438,10 +1450,7 @@
     });
 
     updateSnapChip();
-    updateNotchChip();
-    updateSewChip();
-    updateCurveChip();
-    updateDartChip();
+    syncModeChips();
     updateMeasureChip();
   }
   function updateSnapChip() {

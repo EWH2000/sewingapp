@@ -395,3 +395,43 @@ quad→cubic data-loss trap, board-explosion clamps, and the Bezier-lib bug belo
   (7); print-spine sentinels (`verify-browser-gen`, bag `verify-cloth`) byte-identical green; full preview suite
   green. **Still deferred:** sew-mode refinements (match-notches/ease/gather); the node-delete edge-merge distortion;
   per-frame curve/dart-drag re-flatten perf (throttle if it lags); revisiting the waist dart on a fitted body.
+
+**ATELIER VISUAL OVERHAUL DONE (2026-06-22, owner-gated — "very impressive work").** The app now carries its own
+**atelier "cutting-table" identity** instead of the generic house shell, tuned for the owner's **1920×1080 touchscreen
+laptop** with **large, glasses-friendly text** — the long-deferred "atelier re-skin + widescreen" workstream (DESIGN.md
+"Visual identity" + the [[sewing-atelier-theme]] memory). **Presentation-only** — the print/geometry spine is
+BYTE-IDENTICAL (`git diff` over `pattern-pdf.js`/`printing.py`/`pattern-geom.js`/fold/cloth/mesh/`preview3d.js`/
+`main.py`/`models.py`/`db.py` is empty; full headless suite green), so the 1:1 tiler, calibration gate, IPP path + SSRF
+guard are untouched; no DB/schema change.
+- **Tokens (`styles.css`):** "two rooms, one palette" — warm **light cutting-table** working surfaces (paper `#efe9dd`,
+  tissue cards `#fbf8f1`, warm ink `#21201c`, antique-brass accent **`#9a7430`** replacing the "aggressive" `#e0653a`,
+  leather `#8a5a36`) for Home/Editor/Settings; the dark **studio showroom** stays scoped to `.pv` in `preview.html`
+  (its bright brass `#c8a86b` is the dark-room oxidation — never used on light). The atelier values are the source of
+  truth and the legacy house token names are aliased to them, so every existing component rule re-skins by value.
+  **Always warm light** (the `prefers-color-scheme: dark` override was removed + `color-scheme: light`) — the showroom
+  is the only dark surface. A guard (`.pv input,.pv select {min-height:0}`) keeps the 56px touch sizing from inflating
+  the preview's compact floating controls.
+- **Type:** 18px root + a large-first scale; vendored **IBM Plex Mono** (`app/static/fonts/ibm-plex-mono.woff2`,
+  `@font-face` in `styles.css`, `--font-mono`) for measurements/dimensions (a "caliper readout"; degrades to the system
+  monospace stack if the woff2 is absent). 56px buttons/inputs.
+- **Shell (`base.html`):** a desktop **top nav** (Home · Draw · Settings, reuses `active_tab`) shown at `≥900px` where
+  the phone `.tabbar` is hidden; below 900px the bottom tab bar stays. The house-hub pill is relabelled **"Hub"** (was a
+  second "Home"). `theme-color`/`color-scheme` updated.
+- **Home (`index.html`) = the "cutting-table dashboard"** (full-width `clamp` column): a "Your cutting table" hero with
+  the printer status as a corner **"Press" plate** (single-line address, ellipsis + `title`), the **signature brass
+  measuring-tape rule** (pure CSS), three large **create tiles** (Draw / Boxy tote / Rectangle — the two builders are
+  `<details>` that expand in place; all `tote-*`/`rect-*`/`*-unit` ids + `data-action`s preserved so `app.js` is
+  unchanged), and saved patterns as a **tissue-card gallery** on a recessed mat — each card shows a **real mini SVG
+  drawing of its actual cut lines** via new **`app/static/js/pattern-thumb.js`** (lazy `IntersectionObserver` fetch of
+  `GET /patterns/{id}`, draws the already-flattened `paths`; rebuilds authoring-only freeform docs via
+  `PatternGeom.freeformToDoc`, box/rect via `PatternPDF`). **Home loads only `pattern-geom.js` + `pattern-thumb.js` —
+  NO Maker.js, NO three.js** (verified). Inviting empty state; atelier microcopy.
+- **Editor (`edit.html` + small ADDITIVE `editor.js`):** the crammed toolbar is now a segmented **Select / Notch / Sew /
+  Curve / Dart** tool switcher (active = brass fill) + grouped history/util + a live **mode-hint bar**; `editor.js` gains
+  `updateSelectChip`/`updateModeHint` + an `ed-select`→`setMode(null)` case (UI only — geometry untouched, `#ed-*` ids +
+  `data-action`s preserved). Two-column workspace moved 860→**1024px**, rail widens 360→400→440 at 1440/1760, `dvh`
+  height, distinct `#ed-numeric` (brass edge), sticky actions. Canvas stays the light `#fdfdfb` paper.
+- **Settings (`settings.html`):** re-skinned to match (section heads w/ brass underline, two plates side-by-side ≥900px);
+  `#printer-uri`/`#printer-info` + `save-printer`/`test-printer` preserved.
+**Still deferred (visual):** the owner-only-eyeball items (no headless render test) — pattern-tissue thumbnails + the
+widescreen feel were owner-confirmed; an optional warm "atelier night" dark mode; folding `.pv` into `styles.css`.
