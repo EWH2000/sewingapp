@@ -435,3 +435,56 @@ guard are untouched; no DB/schema change.
   `#printer-uri`/`#printer-info` + `save-printer`/`test-printer` preserved.
 **Still deferred (visual):** the owner-only-eyeball items (no headless render test) — pattern-tissue thumbnails + the
 widescreen feel were owner-confirmed; an optional warm "atelier night" dark mode; folding `.pv` into `styles.css`.
+
+**SET-IN SLEEVES — Stage A (drafting + 1:1 print) DONE (2026-06-23, owner-gated — "retest checks out, good to keep
+going").** The M6 "sleeves" escape hatch is now triggered (a real sleeved attempt appeared) and built in TWO gated
+stages; Stage A = author + print a set-in sleeve at 1:1, Stage B = drape it in 3D (next). A sleeve is just another
+freeform piece — the print spine (`pattern-pdf.js`/`printing.py`/calibration gate/SSRF guard) is **byte-identical**
+(`git diff` empty over those); schema stays ≤3; no DB migration; `params_json` opaque. A multi-agent design +
+3-lens adversarial workflow set the locked decisions (cap = TWO cubic edges, drafter in `pattern-geom.js` not
+`pattern-pdf.js`, two separate sleeve pieces not `count:2`, ease needs no solver change, the underarm self-seam is
+the one Stage-B solver gap).
+- **Drafter (`app/static/js/pattern-geom.js`, pure + Maker-FREE):** `edgeArcLenMm` (de Casteljau arc length honoring
+  `edges[i].curve`), `armholeLengthMm`, `measureCapMm`, `sleevePiece({bicepMm,underLenMm,capHeightMm,hemMm,side})`
+  (a 5-node bell: `0 hem-L 1 hem-R 2 underarm-R 3 cap-top 4 underarm-L`; `e2` BACK cap + `e3` FRONT cap are CUBIC
+  ogees — mild inward scoop at the underarm → outward crown bulge, front flatter than back, `v` via `edgeInwardSign`
+  so the S scales with cap height ⇒ arc length is MONOTONE in cap height), and `draftSleeve(...)` which **bisects cap
+  height** to make the cap seamline = `(armholeFront+armholeBack)·(1+capEaseFrac)` (default ease 0.06) within 0.5 mm
+  (≤24 iters; `ok:false` soft-warns when a too-large armhole is unreachable, never a hard fail). Plus pure
+  `bodiceArmholes(piece)` (the two OUTERMOST curved edges → `{R,L}` armholes, neckline excluded), `shoulderEdgeOf`,
+  and `matchedBackArmhole(...)` (walks the shoulder seam so a CROSSED-shoulder bodice pairs front-R↔back-L on the
+  same arm). The sleeve carries `place3d.role:"sleeve"` (a role VALUE, not a new field) for Stage B.
+- **Cap matching subtlety (measured, not silent):** the bisection matches the CUT line (Maker-free); on a curved
+  armhole with 12 mm SA the SEAM-line ease ends up ~9 mm (vs the 23.6 mm cut-line allowance) — gentle, fine for
+  relaxed/knit, bump `capEaseFrac` for more. A headless test logs the delta.
+- **Editor (`editor.js` + `edit.html`):** a **"+ Sleeve"** button in the Pieces panel → `addSleeve()` detects the
+  bodice front/back + their armholes, drafts a PAIR (R + L, each its own piece, `count:1`), wires per sleeve: front
+  cap(e3)↔front armhole + back cap(e2)↔back armhole (both `ease:0.06`) + underarm SELF-seam e1↔e4, and adds matching
+  balance notches on the bodice armholes (single=front, double=back). A "Sleeve (set-in)" option in the Type select.
+- **⚠️ THE BUG THAT BLANKED THE EDITOR (owner hit it at the gate, fixed):** `commit()` only snapshots undo-history —
+  it does NOT re-normalize the live `state.pieces` (only undo/redo + load do). Every other add-path pushes a
+  COMPLETE piece (`rectPiece` has `placements:[]`), but `sleevePiece` omitted it, so `+ Sleeve` pushed a raw sleeve
+  and the next `render()` threw `p.placements.forEach` of undefined in `drawPaths` — and because `applyCamera()` runs
+  BEFORE the throw, the geometry kept transforming on pan/zoom while the overlay froze (the rAF re-threw 61×). The
+  headless tests all went through `normalizePieces` (which ADDS `placements`), so none caught it. Fix: `sleevePiece`
+  now returns a **render-ready** piece (`placements:[], layout:null, role:null` — parity with `rectPiece`) + the
+  three unguarded render reads hardened to `(p.placements||[])`/`(p.notches||[])` so no incomplete piece can ever
+  blank the canvas again + a new `verify-sleeve` check asserts the RAW (pre-normalize) drafter output is render-ready.
+- **Seed `tools/seed-examples.mjs`:** **id 8 "Example — Sleeved Tank"** (the seeded bag/garment fixture corpus), built
+  via the SAME `draftSleeve`+`bodiceArmholes`+`matchedBackArmhole` path the editor takes (so seed + UI can't drift);
+  `SEED_OVERWRITE`-able, idempotent-skip on a default run; id 3/4/5/6/7 untouched.
+- **Tests:** new `tools/tiling/verify-sleeve.mjs` (46 — arc/monotonicity/bisection/ok-flag/front-flatter-than-back/
+  cut↔seam ease delta/nodes-never-mutated/render-ready/auto-detect+cross-pairing/print sentinel) + new `verify-seed-
+  sleeve.mjs` (25 — id8 prints 0-bad-page 1:1, caps eased onto armholes, self-seams zip, notches added); extended
+  `verify-seams.mjs` (32) + `verify-vendored-maker.mjs` (9, cap cubics via the REAL browser Maker) + `verify-seed-
+  bodice.mjs` (skip eased/self seams + arc-length). Full headless + print-spine suites green.
+**NEXT — Stage B1 (3D drape of the sleeve):** in `pattern-cloth.js`, (1) a `placeGarment` sleeve warm-start (wrap the
+tube BESIDE the limbless torso, projecting ±X from the armhole band, pushed outside; pin the cap), (2) sew the
+underarm NON-dart **same-piece seam** — today `pattern-cloth.js:~247` does `if (s.a.piece===s.b.piece) continue;` and
+only DARTS get `selfSeamPairs`, so the sleeve tube is sewn by nothing → route a non-dart self-seam through
+`seamPairs(mesh,eA,mesh,eB)` into the `kI/kJ` SPRING list (NOT the dart weld), (3) exclude `ease>0` seams from the
+`overTension` warning, (4) `SIM_VERSION 4→5`. Ensure `inferRole`/`isStrapPiece` don't capture the sleeve. Extend
+`tools/preview/verify-garment-drape.mjs` (sleeve routes to a sleeve sector, tube closes, no body penetration, eased
+cap quiet, sleeveless regression byte-identical) + `verify-cloth.mjs` tote diff = 0. **Stage B2 (later, optional):**
+analytic capsule ARMS on the dress form (`body-form.js` gated loft + collision, `preview3d.js` render, arm-following
+wrap, `body.bicepMm/wristMm`). Full design + risks in the plan file `~/.claude/plans/can-we-add-a-dazzling-sky.md`.

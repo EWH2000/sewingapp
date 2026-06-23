@@ -41,6 +41,16 @@ let threw = false, bcut = 0;
 try { bcut = G.pieceGeom(bodice).cut.length; } catch (_) { threw = true; }
 ok(!threw && bcut > 30, `seeded-bodice shape flattens under the vendored bundle (threw=${threw}, ${bcut} cut pts)`);
 
+// a drafted set-in SLEEVE (two CUBIC cap edges) flattens under the vendored bundle — npm makerjs
+// bundles bezier-js so the other tests can't prove the BROWSER cubic path; this can.
+{
+  const r = G.draftSleeve({ armholeFrontMm: 197, armholeBackMm: 197, capEaseFrac: 0.06 });
+  let sthrew = false, scut = 0, sseam = false;
+  try { const g = G.pieceGeom(r.piece); scut = g.cut.length; sseam = !!g.seam; } catch (_) { sthrew = true; }
+  ok(!sthrew && scut > 40, `sleeve cap cubics flatten under the vendored bundle (threw=${sthrew}, ${scut} cut pts)`);
+  ok(sseam, "drafted sleeve still produces a seam line (curved-cap offset) under the vendored bundle");
+}
+
 // DEGRADE-NEVER-BLANK: remove the Bezier global → BezierCurve throws → pieceGeom must fall back to
 // straight edges (NOT throw, which is what blanked the editor before the fix).
 const savedBezier = global.Bezier; global.Bezier = undefined;

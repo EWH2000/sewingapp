@@ -112,9 +112,41 @@ function dress() {
   };
 }
 
+// ── 4. Sleeved tank (M6): the tank bodice + a pair of SET-IN sleeves eased into the armholes ──
+// Reuses the same draft+wire path the editor's "+ Sleeve" button takes (G.draftSleeve +
+// G.bodiceArmholes + G.matchedBackArmhole), so the seed and the UI can't drift. Each sleeve is its
+// OWN piece (distinct seam refs); the cap eases (6%) into the armhole, and the underarm is a
+// same-piece self-seam (e1↔e4). Crossed shoulders ⇒ the front-R armhole pairs the back-L armhole.
+function sleevedTank() {
+  const front = bodicePiece("st_bf", "Sleeved Tank Front", "front", { neckDip: 0.28, dart: true });
+  const back = bodicePiece("st_bb", "Sleeved Tank Back", "back", { neckDip: 0.10, dart: false });
+  const pieces = [front, back];
+  const seams = [
+    { a: { piece: "st_bf", edge: 3 }, b: { piece: "st_bb", edge: 5 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // R shoulder (crossed)
+    { a: { piece: "st_bf", edge: 5 }, b: { piece: "st_bb", edge: 3 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] }, // L shoulder (crossed)
+    { a: { piece: "st_bf", edge: 1 }, b: { piece: "st_bb", edge: 7 } }, // R side
+    { a: { piece: "st_bf", edge: 7 }, b: { piece: "st_bb", edge: 1 } }, // L side
+  ];
+  const fArm = G.bodiceArmholes(front), bArm = G.bodiceArmholes(back);
+  const bicepMm = Math.round(0.32 * DEFAULT_BODY.bustMm);
+  for (const side of ["R", "L"]) {
+    const fA = fArm[side];
+    const bA = G.matchedBackArmhole(front, fA.edge, back, bArm, seams) || bArm[side];
+    const r = G.draftSleeve({ armholeFrontMm: fA.len, armholeBackMm: bA.len, bicepMm, capEaseFrac: 0.06, side });
+    const slv = r.piece; slv.id = "st_slv_" + side; slv.name = "Sleeve " + (side === "R" ? "(right)" : "(left)");
+    pieces.push(slv);
+    seams.push({ a: { piece: slv.id, edge: 3 }, b: { piece: "st_bf", edge: fA.edge }, ease: 0.06 }); // front cap ↔ front armhole
+    seams.push({ a: { piece: slv.id, edge: 2 }, b: { piece: "st_bb", edge: bA.edge }, ease: 0.06 }); // back cap ↔ back armhole
+    seams.push({ a: { piece: slv.id, edge: 1 }, b: { piece: slv.id, edge: 4 } });                    // underarm self-seam
+    front.notches = (front.notches || []).concat([{ edge: fA.edge, t: 0.45, type: "single" }]);
+    back.notches = (back.notches || []).concat([{ edge: bA.edge, t: 0.50, type: "double" }]);
+  }
+  return { name: "Example — Sleeved Tank", body: Object.assign({}, DEFAULT_BODY), pieces, seams };
+}
+
 // ── build + POST ────────────────────────────────────────────────────────────────
-const EXAMPLES = [skirt(), bodice(), dress()];
-export { skirt, bodice, dress, bodicePiece, EXAMPLES, G };   // for tools/preview/verify-seed-bodice.mjs
+const EXAMPLES = [skirt(), bodice(), dress(), sleevedTank()];
+export { skirt, bodice, dress, sleevedTank, bodicePiece, EXAMPLES, G };   // for tools/preview/verify-seed-bodice.mjs
 
 async function main() {
   // Default: idempotent skip-by-name (create only what's missing). SEED_OVERWRITE=1 UPDATES an

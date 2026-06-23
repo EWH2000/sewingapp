@@ -258,12 +258,12 @@
         s += `<path d="${polyD(off(g.seam))}" fill="none" stroke="${SEAMC}" stroke-width="1" stroke-dasharray="5 3" opacity="${op}" vector-effect="non-scaling-stroke"/>`;
       if (g.cut && g.cut.length)
         s += `<path d="${polyD(off(g.cut))}" fill="${act ? FILL : DIMFILL}" stroke="${over ? WARN : (act ? INK : DIM)}" stroke-width="${over ? 2.2 : (act ? 2 : 1.7)}" opacity="${op}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-      p.placements.forEach((pl, idx) => {
+      (p.placements || []).forEach((pl, idx) => {
         const sel = act && state.selection.type === "placement" && state.selection.index === idx;
         const pts = `${pl.x + L.x},${pl.y + L.y} ${pl.x + pl.w + L.x},${pl.y + L.y} ${pl.x + pl.w + L.x},${pl.y + pl.h + L.y} ${pl.x + L.x},${pl.y + pl.h + L.y}`;
         s += `<polygon points="${pts}" fill="none" stroke="${sel ? SEL : SEAMC}" stroke-width="${sel ? 2 : 1.3}" opacity="${op}" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>`;
       });
-      for (const nt of p.notches) {
+      for (const nt of (p.notches || [])) {
         for (const m of G.notchTicks(p.nodes, nt))   // upgraded {edge,t,type} → 1 (single) or 2 (double) ticks; legacy {x,y} → 1
           s += `<line x1="${m[0][0] + L.x}" y1="${m[0][1] + L.y}" x2="${m[1][0] + L.x}" y2="${m[1][1] + L.y}" stroke="${act ? INK : DIM}" stroke-width="1.6" opacity="${op}" vector-effect="non-scaling-stroke"/>`;
       }
@@ -296,7 +296,7 @@
         const mx = (as.sx + bs.sx) / 2, my = (as.sy + bs.sy) / 2;
         eSvg += labelTag(mx, my - 6, fmtLen(G.edgeLength(a, b)), isSel ? SEL : LABELC);
       }
-      ap.placements.forEach((pl, i) => {
+      (ap.placements || []).forEach((pl, i) => {
         const c = W2S(aB({ x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 }));
         const sel = state.selection.type === "placement" && state.selection.index === i;
         eSvg += labelTag(c.sx, c.sy + 4, pl.label || "Pocket", sel ? SEL : SEAMC);
@@ -398,9 +398,10 @@
       + `</div>`
       + `<label class="fld" style="margin-top:8px;display:block"><span>Type <span class="muted">(3D preview)</span></span>`
       + `<select id="ed-piece-role">`
-      + `<option value="auto"${!ap.role ? " selected" : ""}>Auto-detect</option>`
+      + `<option value="auto"${!ap.role && !(ap.place3d && ap.place3d.role === "sleeve") ? " selected" : ""}>Auto-detect</option>`
       + `<option value="panel"${ap.role === "panel" ? " selected" : ""}>Panel (folds flat)</option>`
       + `<option value="strap"${ap.role === "strap" ? " selected" : ""}>Strap / handle</option>`
+      + `<option value="sleeve"${ap.place3d && ap.place3d.role === "sleeve" ? " selected" : ""}>Sleeve (set-in)</option>`
       + `</select></label>`
       + (seamFailed ? `<p class="small" style="color:var(--warn);margin:.2rem 0 0">Seam allowance is too large for this shape — reduce it or widen the piece.</p>` : "")
       + `<button class="btn small btn--block" data-action="ed-add-place" style="margin-top:8px">+ Pocket guide</button>`
@@ -417,7 +418,14 @@
     const sm = $("#ed-piece-seam");
     if (sm) sm.addEventListener("change", () => { const v = toMm(parseFloat(sm.value)); ap.seamMm = isFinite(v) && v > 0 ? G.round2(v) : 0; commit(); render(); });
     const rl = $("#ed-piece-role");
-    if (rl) rl.addEventListener("change", () => { ap.role = rl.value === "strap" ? "strap" : rl.value === "panel" ? "panel" : null; commit(); render(); });
+    if (rl) rl.addEventListener("change", () => {
+      if (rl.value === "sleeve") { ap.place3d = Object.assign({}, ap.place3d, { role: "sleeve" }); ap.role = null; }
+      else {
+        ap.role = rl.value === "strap" ? "strap" : rl.value === "panel" ? "panel" : null;
+        if (ap.place3d && ap.place3d.role === "sleeve") ap.place3d = ap.place3d.wrap ? { role: null, wrap: ap.place3d.wrap } : null;
+      }
+      commit(); render();
+    });
   }
   function addPiece() {
     const p = G.rectPiece("Piece " + (state.pieces.length + 1), 150, 200);
@@ -443,6 +451,61 @@
     state.active = i; select("none", -1); fitPiece(i); render();
   }
   function autoArrange() { G.packLayouts(state.pieces); commit(); fitAll(); render(); }
+
+  // ── set-in sleeve: draft + wire into the bodice (Stage A) ─────────────────────
+  // A bodice "panel" we can hang a sleeve on (a front/back garment piece, not a skirt/band/strap).
+  function isBodicePanel(p, re) {
+    const r = (p.place3d && p.place3d.role) || "", nm = (p.name || "").toLowerCase();
+    if (/skirt|band|strap|sleeve|binding|facing/.test(r) || /skirt|waistband|band|strap|sleeve|binding|facing/.test(nm)) return false;
+    return re.test(r) || re.test(nm);
+  }
+  function addSeamSilently(a, b, opts) {
+    opts = opts || {};
+    const id = freshId("s", new Set(state.seams.map((s) => s.id)));
+    const seam = { id, a: { piece: a.piece, edge: a.edge }, b: { piece: b.piece, edge: b.edge }, foldAngle: null, anchors: opts.anchors || null };
+    if (opts.ease) seam.ease = opts.ease;
+    state.seams.push(seam);
+  }
+  function addArmholeNotch(piece, edge, t, type) {
+    piece.notches = piece.notches || [];
+    if (piece.notches.some((nt) => Number.isInteger(nt.edge) && nt.edge === edge && Math.abs((nt.t || 0) - t) < 0.02)) return;
+    piece.notches.push({ edge, t, type });
+  }
+  // Draft a pair of set-in sleeves from the bodice armholes + wire them in (cap↔armhole eased seams,
+  // underarm self-seam, matching balance notches). Sleeves only make sense on a garment, so this
+  // turns the doc into one (adds default body measurements if absent — the form lofts on /preview).
+  function addSleeve() {
+    const front = state.pieces.find((p) => isBodicePanel(p, /front/) && G.bodiceArmholes(p));
+    const back = state.pieces.find((p) => isBodicePanel(p, /back/) && G.bodiceArmholes(p));
+    if (!front || !back) {
+      setStatus("To add a sleeve, the doc needs a bodice Front and Back panel with curved armholes (like the tank bodice).", "warn");
+      clearStatus(6000); return;
+    }
+    const fArm = G.bodiceArmholes(front), bArm = G.bodiceArmholes(back);
+    if (!state.body) state.body = Object.assign({}, G.DEFAULT_BODY);
+    const used = new Set(state.pieces.map((p) => p.id).filter(Boolean));
+    let warned = false;
+    for (const side of ["R", "L"]) {
+      const fA = fArm[side];
+      const bA = G.matchedBackArmhole(front, fA.edge, back, bArm, state.seams) || bArm[side];
+      const r = G.draftSleeve({ armholeFrontMm: fA.len, armholeBackMm: bA.len,
+        bicepMm: Math.round(0.32 * state.body.bustMm), capEaseFrac: 0.06, side });
+      const slv = r.piece;
+      slv.id = freshId("slv", used); used.add(slv.id);
+      placeToRight(slv); state.pieces.push(slv);
+      // front cap (e3) ↔ front armhole; back cap (e2) ↔ back armhole (same arm); underarm self-seam e1↔e4.
+      addSeamSilently({ piece: slv.id, edge: 3 }, { piece: front.id, edge: fA.edge }, { ease: 0.06 });
+      addSeamSilently({ piece: slv.id, edge: 2 }, { piece: back.id, edge: bA.edge }, { ease: 0.06 });
+      addSeamSilently({ piece: slv.id, edge: 1 }, { piece: slv.id, edge: 4 });
+      // matching balance notches on the bodice armholes: single = front, double = back.
+      addArmholeNotch(front, fA.edge, 0.45, "single");
+      addArmholeNotch(back, bA.edge, 0.50, "double");
+      if (!r.ok) warned = true;
+    }
+    state.active = state.pieces.length - 1; select("none", -1); commit(); fitAll(); render();
+    if (warned) { setStatus("Sleeves added, but a cap is smaller than its armhole — widen the bicep or lower the armhole.", "warn"); clearStatus(7000); }
+    else { setStatus("Added a pair of set-in sleeves. Print at 1:1 and tape-check the cap against the armhole.", "info"); clearStatus(6000); }
+  }
 
   // ── body measurements card (doc-level; lofts the dress form on /preview) ──────
   // state.body is null for bags, or {heightMm,bustMm,waistMm,hipMm} for garments. The document is
@@ -1427,6 +1490,7 @@
         case "ed-print": doPrint(); break;
         case "ed-export-svg": doExport("svg"); break;
         case "ed-export-dxf": doExport("dxf"); break;
+        case "ed-add-sleeve": addSleeve(); break;
         case "ed-add-piece": addPiece(); break;
         case "ed-dup-piece": duplicatePiece(); break;
         case "ed-del-piece": deletePiece(); break;

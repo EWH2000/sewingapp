@@ -16,8 +16,11 @@ console.log("=== inter-piece seam edges match in length (zip without strain) ===
 for (const ex of EXAMPLES) {
   const byId = {}; ex.pieces.forEach((p) => { byId[p.id] = p; });
   for (const s of ex.seams) {
+    if (s.a.piece === s.b.piece) continue;     // self-seam (sleeve underarm) — not an inter-piece zip
+    if (s.ease) continue;                       // an EASED seam (a sleeve cap into its armhole) is meant NOT to match — verify-seed-sleeve.mjs checks those
     const A = byId[s.a.piece], B = byId[s.b.piece];
-    const la = edgeLen(A.nodes, s.a.edge), lb = edgeLen(B.nodes, s.b.edge);
+    // arc length (honors curved edges) so a curved seam zip is measured truly, not by its chord.
+    const la = G.edgeArcLenMm(A, s.a.edge), lb = G.edgeArcLenMm(B, s.b.edge);
     ok(Math.abs(la - lb) <= 2, `${ex.name}: ${s.a.piece}.e${s.a.edge}(${la.toFixed(0)}) ↔ ${s.b.piece}.e${s.b.edge}(${lb.toFixed(0)}) match within 2mm`);
   }
 }

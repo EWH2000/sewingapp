@@ -980,6 +980,17 @@ warm start that makes the drape tractable.
    unchanged; only the *collider* gains arms. So building sleeveless-first costs nothing
    later. (Still open: the exact trigger to start M6 — confirm when a real sleeved
    attempt appears.)
+   **UPDATE (2026-06-23): the M6 trigger FIRED — the owner asked for sleeves.** Built as
+   SET-IN sleeves in two gated stages (see `~/sewingapp/CLAUDE.md` status). **Stage A DONE
+   + owner-gated:** a freeform sleeve PIECE (5-node bell, two cubic cap edges eased into the
+   armhole) authored via a "+ Sleeve" button and printed 1:1 — print spine byte-identical, no
+   collider change. Confirmed the on-ramp held: the seam graph / curves / ease / notches model
+   carried the sleeve unchanged. **Stage B1 (NEXT) = drape beside the limbless torso** (sleeve
+   warm-start + the underarm same-piece self-seam, NO arms yet); **Stage B2 (later, optional) =
+   analytic capsule ARMS on the form** ("the collider gains arms", exactly as planned here). So
+   M6 is no longer fully deferred — the authoring half shipped; only the arm collider remains
+   optional. Full design + locked decisions + risk list: the plan file
+   `~/.claude/plans/can-we-add-a-dazzling-sky.md`.
 2. **Garment scope — RESOLVED (2026-06-21): skirts + tank-style (sleeveless) dresses
    first.** This is the easy, high-value end of §3.3: minimal curves, few/no darts, no
    sleeve-cap easing. 3b can ship with light curve/dart support and grow it; the full

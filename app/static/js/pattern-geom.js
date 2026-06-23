@@ -507,6 +507,160 @@
     return { cut, seam };
   }
 
+  // ── set-in sleeve drafting (pure, Maker-FREE) ──────────────────────────────
+  // A sleeve is just another freeform piece: a 5-node bell with two CUBIC cap edges that ease into
+  // the bodice armhole. It lowers to cut/seam through the unchanged pieceGeom — the print spine is
+  // untouched. These helpers stay dependency-free (de Casteljau, not Maker) so Home, the seed tool,
+  // and the headless tests can all measure cap arc length without loading Maker.js.
+  //
+  // Node layout (local mm, y-up; hem on the floor):
+  //   0 hem-L  1 hem-R  2 underarm-R  3 cap-top  4 underarm-L
+  //   e0 hem | e1 right side | e2 BACK cap (cubic) | e3 FRONT cap (cubic) | e4 left side
+  // The cap MUST be two edges: it sews to two different bodice edges (front armhole + back armhole),
+  // and a seam is one EdgeRef↔EdgeRef. The underarm seam joins e1↔e4 (a same-piece self-seam).
+  const SLEEVE_CAP = { u1: 0.28, u2: 0.72, scoop: 0.07, backCrown: 0.22, frontCrown: 0.16 };
+
+  // de Casteljau point on a 3- (quad) or 4-point (cubic) control polygon.
+  function bezierPoint(ctrl, t) {
+    let pts = ctrl.map((p) => [p[0], p[1]]);
+    while (pts.length > 1) {
+      const nx = [];
+      for (let i = 0; i + 1 < pts.length; i++)
+        nx.push([pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t]);
+      pts = nx;
+    }
+    return pts[0];
+  }
+  // Arc length (mm) of edge i of a piece, honoring an authored edges[i].curve (quad/cubic/arc),
+  // flattened with `samples` de Casteljau segments (64 ⇒ <0.1 mm error). Straight edge ⇒ chord.
+  // Measures the CUT line (Maker-free); the cut↔seam-line difference on a curved armhole with SA is
+  // absorbed by the cap ease (a headless test logs it so it is never silent). Matches modelFromNodes
+  // (arc is lowered as a quad), so this length agrees with what pieceGeom flattens + prints.
+  function edgeArcLenMm(piece, i, samples) {
+    const nodes = piece.nodes || [], n = nodes.length;
+    if (n < 2) return 0;
+    const a = nodes[i], b = nodes[(i + 1) % n];
+    const e = piece.edges && piece.edges[String(i)], c = e && e.curve && Array.isArray(e.curve.cp) ? e.curve : null;
+    if (!c) return Math.hypot(b.x - a.x, b.y - a.y);
+    let ctrl;
+    if (c.type === "cubic" && c.cp.length >= 4) {
+      ctrl = [[a.x, a.y], edgeLocalToWorld(a, b, c.cp[0], c.cp[1]), edgeLocalToWorld(a, b, c.cp[2], c.cp[3]), [b.x, b.y]];
+    } else {   // quad or arc (arc lowers as a quad, matching modelFromNodes)
+      ctrl = [[a.x, a.y], edgeLocalToWorld(a, b, c.cp[0], c.cp[1]), [b.x, b.y]];
+    }
+    const S = Math.max(8, samples || 64);
+    let len = 0, prev = bezierPoint(ctrl, 0);
+    for (let s = 1; s <= S; s++) { const p = bezierPoint(ctrl, s / S); len += Math.hypot(p[0] - prev[0], p[1] - prev[1]); prev = p; }
+    return len;
+  }
+  // total armhole arc length (front edge + back edge) — the cap seamline must equal this × (1+ease).
+  function armholeLengthMm(frontPanel, frontEdge, backPanel, backEdge) {
+    return edgeArcLenMm(frontPanel, frontEdge | 0) + edgeArcLenMm(backPanel, backEdge | 0);
+  }
+  // the cap seamline length of a sleeve piece = back cap (e2) + front cap (e3).
+  function measureCapMm(piece) { return edgeArcLenMm(piece, 2) + edgeArcLenMm(piece, 3); }
+
+  // a raw (un-normalized) sleeve piece. spec: { bicepMm, underLenMm (hem→underarm), capHeightMm,
+  // hemMm?, side? ("R"|"L"), seamMm? }. Total piece height = underLenMm + capHeightMm. The two cap
+  // edges are cubic ogees (mild inward scoop at the underarm → outward crown bulge), the FRONT (e3)
+  // flatter than the BACK (e2). cp `v` is in chord-lengths via edgeInwardSign, so the S stays
+  // believable at every cap height (raising the cap scales the bow with the chord) → arc length is
+  // monotone in cap height, which is what draftSleeve bisects on.
+  function sleevePiece(spec) {
+    spec = spec || {};
+    const B = Math.max(40, +spec.bicepMm || 320);
+    const under = Math.max(10, +spec.underLenMm || 130);
+    const Ch = Math.max(20, +spec.capHeightMm || 130);
+    const hem = +spec.hemMm > 0 ? +spec.hemMm : B;            // straight sleeve (hem = bicep) by default
+    const side = spec.side === "L" ? "L" : "R";
+    const top = under + Ch, xHemL = (B - hem) / 2, xHemR = (B + hem) / 2;
+    const nodes = [
+      { x: round2(xHemL), y: 0, radius: 0 }, { x: round2(xHemR), y: 0, radius: 0 },
+      { x: round2(B), y: round2(under), radius: 0 }, { x: round2(B / 2), y: round2(top), radius: 0 },
+      { x: 0, y: round2(under), radius: 0 },
+    ];
+    const s2 = edgeInwardSign(nodes, 2), s3 = edgeInwardSign(nodes, 3);
+    const K = SLEEVE_CAP;
+    const edges = {
+      "2": { curve: { type: "cubic", cp: [K.u1, round2(+K.scoop * s2), K.u2, round2(-K.backCrown * s2)] } },   // back cap
+      "3": { curve: { type: "cubic", cp: [K.u1, round2(+K.scoop * s3), K.u2, round2(-K.frontCrown * s3) ] } },  // front cap (flatter)
+    };
+    return {
+      id: "slv_" + side, name: side === "L" ? "Sleeve (left)" : "Sleeve (right)",
+      count: 1, seamMm: Math.max(0, +spec.seamMm >= 0 ? +spec.seamMm : 12), cornerRadius: 0, closed: true,
+      role: null, place3d: { role: "sleeve" }, nodes, edges,
+      // balance notches: single = front (e3), double = back (e2) — the maker registers the cap.
+      notches: [{ edge: 3, t: 0.45, type: "single" }, { edge: 2, t: 0.50, type: "double" }],
+      // a render-READY piece (parity with rectPiece): the editor pushes this straight into state.pieces
+      // and renders BEFORE the next normalize, so placements/layout must already exist (drawPaths reads
+      // p.placements directly). Omitting them crashed the canvas the instant "+ Sleeve" was tapped.
+      placements: [], layout: null,
+    };
+  }
+  // Draft a set-in sleeve whose cap seamline = (armholeFrontMm + armholeBackMm) × (1 + capEaseFrac),
+  // by BISECTING cap height (bicep is a fit measurement, held fixed; cap length is monotone in cap
+  // height). Returns { piece, capHeightMm, capLenMm, targetMm, ok }. ok:false (cap can't reach the
+  // target even at the max height) is a SOFT warning, never a hard fail — the piece still prints.
+  function draftSleeve(opts) {
+    opts = opts || {};
+    const aF = Math.max(1, +opts.armholeFrontMm || 0), aB = Math.max(1, +opts.armholeBackMm || 0);
+    const ease = Math.max(0, +opts.capEaseFrac >= 0 ? +opts.capEaseFrac : 0.06);
+    const target = (aF + aB) * (1 + ease);
+    const bicepMm = +opts.bicepMm > 0 ? +opts.bicepMm : Math.round(0.78 * (aF + aB));
+    const underLenMm = +opts.underLenMm > 0 ? +opts.underLenMm : 130;
+    const hemMm = +opts.hemMm > 0 ? +opts.hemMm : bicepMm;
+    const side = opts.side === "L" ? "L" : "R";
+    const cap = (ch) => measureCapMm(sleevePiece({ bicepMm, underLenMm, capHeightMm: ch, hemMm, side }));
+    let lo = 30, hi = Math.max(0.6 * bicepMm, 120);
+    let ok = true, grow = 0;
+    while (cap(hi) < target && grow++ < 8) hi *= 1.4;          // widen the bracket if a tall cap is needed
+    if (cap(hi) < target) ok = false;
+    let ch = (lo + hi) / 2;
+    for (let it = 0; it < 40; it++) {
+      ch = (lo + hi) / 2; const c = cap(ch);
+      if (Math.abs(c - target) < 0.5) break;
+      if (c < target) lo = ch; else hi = ch;
+    }
+    const piece = sleevePiece({ bicepMm, underLenMm, capHeightMm: round2(ch), hemMm, side });
+    return { piece, capHeightMm: round2(ch), capLenMm: round2(measureCapMm(piece)), targetMm: round2(target), bicepMm, ok };
+  }
+  // A bodice's two armhole edges = the OUTERMOST curved edges (the neckline curve sits near centre).
+  // Returns { R:{edge,len}, L:{edge,len} } (R = the right-of-centre midpoint) or null when the piece
+  // has no armholes (fewer than two curved edges). Pure → headless-testable on the seeded bodice.
+  function bodiceArmholes(piece) {
+    if (!piece || !piece.edges || !piece.nodes) return null;
+    const n = piece.nodes.length;
+    const keys = Object.keys(piece.edges).map((k) => parseInt(k, 10)).filter((i) => i >= 0 && i < n);
+    if (keys.length < 2) return null;
+    const mids = keys.map((i) => { const a = piece.nodes[i], b = piece.nodes[(i + 1) % n]; return { edge: i, mx: (a.x + b.x) / 2 }; });
+    let R = mids[0], L = mids[0];
+    for (const m of mids) { if (m.mx > R.mx) R = m; if (m.mx < L.mx) L = m; }
+    if (R.edge === L.edge) return null;
+    return { R: { edge: R.edge, len: edgeArcLenMm(piece, R.edge) }, L: { edge: L.edge, len: edgeArcLenMm(piece, L.edge) } };
+  }
+  // The edge adjacent to an armhole at its SHOULDER end (the higher-y endpoint of the armhole edge).
+  function shoulderEdgeOf(piece, armEdge) {
+    const n = piece.nodes.length, a = piece.nodes[armEdge], b = piece.nodes[(armEdge + 1) % n];
+    return (b.y >= a.y) ? (armEdge + 1) % n : (armEdge - 1 + n) % n;
+  }
+  // Which BACK armhole is on the same physical arm as a given FRONT armhole — walk the shoulder seam
+  // (front shoulder edge → its sewn back edge → the back armhole adjacent to it). Handles a bodice
+  // whose shoulders CROSS (front-R ↔ back-L, like the seeded tank). null when no shoulder seam is
+  // found (the caller falls back to same-side pairing). `bArm` = bodiceArmholes(back); `seams` = the
+  // current seam list. Pure (the seam list is passed in), so it's headless-testable.
+  function matchedBackArmhole(front, fEdge, back, bArm, seams) {
+    if (!bArm) return null;
+    const fSh = shoulderEdgeOf(front, fEdge);
+    for (const s of (seams || [])) {
+      let bEdge = null;
+      if (s.a.piece === front.id && s.a.edge === fSh && s.b.piece === back.id) bEdge = s.b.edge;
+      else if (s.b.piece === front.id && s.b.edge === fSh && s.a.piece === back.id) bEdge = s.a.edge;
+      if (bEdge == null) continue;
+      for (const side of ["R", "L"]) if (shoulderEdgeOf(back, bArm[side].edge) === bEdge) return bArm[side];
+    }
+    return null;
+  }
+
   // ── notches + placement guides (per-piece marks) ───────────────────────────
   const rectPts = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
   // the edge nearest to a point, plus the projection of the point onto it.
@@ -718,6 +872,8 @@
     nodesToPoints, nodesToPaths, insertVertexOnEdge, polylineToNodes,
     rectPiece, normalizePieces, normalizeSeams, normalizeBody, piecesFromDoc, pieceGeom, nearestEdge, notchMark, notchTicks,
     loweredBoundary, DEFAULT_BODY,
+    edgeArcLenMm, armholeLengthMm, measureCapMm, sleevePiece, draftSleeve, SLEEVE_CAP,
+    bodiceArmholes, shoulderEdgeOf, matchedBackArmhole,
     edgeLocalToWorld, worldToEdgeLocal, edgeInwardSign, reindexEdgeRefs, migrateNotches,
     packLayouts, normalizeDoc, freeformToDoc, exportBoard, defaultParams,
   };

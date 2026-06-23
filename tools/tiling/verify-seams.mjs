@@ -126,4 +126,28 @@ console.log("=== M5a: legacy {x,y} notch migrates on save, schema-1/2 still load
   ok(s1.schema === 2 && s1.pieces.length === 1 && !s1.body, "schema-1 doc still loads as one piece, schema 2");
 }
 
+console.log("=== set-in sleeve: cap↔armhole seams (with ease) + the underarm SELF-seam round-trip ===");
+{
+  // a drafted sleeve + a bodice front/back, wired exactly as the editor's addSleeve() will:
+  // front-cap(e3)↔front-armhole, back-cap(e2)↔back-armhole (both eased), underarm self-seam e1↔e4.
+  const slv = G.draftSleeve({ armholeFrontMm: 197, armholeBackMm: 197, capEaseFrac: 0.06 }).piece;
+  const doc = G.freeformToDoc({
+    name: "Sleeved", body: G.DEFAULT_BODY,
+    pieces: [rect("bo_front", "Front"), rect("bo_back", "Back", 240), slv],
+    seams: [
+      { a: { piece: slv.id, edge: 3 }, b: { piece: "bo_front", edge: 1 }, ease: 0.06 },   // front cap ↔ a bodice edge
+      { a: { piece: slv.id, edge: 2 }, b: { piece: "bo_back", edge: 1 }, ease: 0.06 },     // back cap ↔ a bodice edge
+      { a: { piece: slv.id, edge: 1 }, b: { piece: slv.id, edge: 4 } },                    // underarm SELF-seam (same piece)
+    ],
+  });
+  ok(doc.schema === 3, "sleeved doc is schema 3");
+  ok(doc.seams.length === 3, "all three sleeve seams survive normalizeSeams");
+  const capSeam = doc.seams.find((s) => s.a.edge === 3);
+  ok(capSeam && Math.abs(capSeam.ease - 0.06) === 0, "cap↔armhole seam carries ease 0.06");
+  const self = doc.seams.find((s) => s.a.piece === s.b.piece);
+  ok(self && self.a.edge === 1 && self.b.edge === 4, "underarm SELF-seam (a.piece === b.piece) is preserved (not dropped)");
+  // sleeve still prints (cut/seam kinds only)
+  ok(doc.paths.every((p) => p.kind === "cut" || p.kind === "seam"), "sleeved doc lowers to only cut/seam line-kinds");
+}
+
 console.log(`\nALL PASS — ${pass} checks`);
