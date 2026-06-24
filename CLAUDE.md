@@ -505,3 +505,29 @@ distance, attach iters, ease level, armhole anchoring (all tested). **Owner's ca
 sleeve currently hangs flat against the torso, self-crumpling, hard on the eye).** Stage B1 is committed but NOT
 owner-gated (the cap gap). Deep state + the B2 plan: **`HANDOFF-sleeve-3d.md`** (+ the [[sewing-sleeve-arms-insight]]
 memory). The whole feature lives at `/preview/8` (seeded "Sleeved Tank").
+
+**SLEEVES — Stage B2 (dress-form ARMS + sleeve wraps the limb) WIP-COMMITTED (2026-06-24, owner reviewed
+"pretty close, needs the armhole socket to be production worthy").** The sleeve now drapes OVER an analytic
+capsule **arm** instead of hanging flat beside the limbless torso. All garment-only; **print spine +
+calibration gate byte-identical** (`pattern-pdf.js`/`printing.py`/`pattern-geom.js`/fold/mesh/`main.py`
+untouched — `git diff` only over body-form/cloth/preview/preview3d + their tests); bags + sleeveless
+byte-identical. `SIM_VERSION 7→9`. Commit `3a1d9c8`. **`body-form.js`:** tapered capsule arms appended to the
+loft only when `opts.arms` (bicep/wrist girth derived from bust; full arm to the wrist; 12° down-and-out);
+union SDF collision (torso ∪ arms) with early-return torso-only byte-identity. **`pattern-cloth.js`:** a
+sleeve (1) WRAPS the arm via a **mirror-safe tube warm-start** (`eTop`=world-up ⟂ axis; `eSide` FORCED +z so
+L/R wrap identically — the old `dir×up` frame flipped handedness + twisted the left sleeve), and (2) holds
+that wrap via an **arm-hug tether** (inward analog of the bag inflation tether) confining the sleeve body to a
+shell around the limb so gravity can't sag it into a pouch; the cap region transitions armhole→arm over the
+WHOLE sleeve (gradual blend, de-crumples the shoulder) + cap interior tethered smooth, cap EDGE free to weld.
+Result: **~355° wrap, mirror-symmetric, top+bottom, bodice seams closed, body penetration ≲16mm.**
+**`preview3d.js`/`preview.js`:** translucent capsule arms render when the doc has a sleeve (renderer +
+collider share one stack via `hasSleevePiece`). Tests: `verify-body-form` +arm/capsule/union; `verify-garment-
+drape` +a **true wrap-coverage** assertion (>270°, top+bottom) that locks the fix (the old "within 2·r0" check
+was too lenient — it passed a sagging pouch). Full headless suite green. **OPEN PROBLEM → NEXT SESSION:** the
+cap-to-shoulder JOIN still gaps **~85mm** (a soft hole at each shoulder). Root cause is **GEOMETRIC** — the
+bodice armhole is a vertical slit on the torso side, the arm must be bolted OUTBOARD to clear the bust, so the
+cap reaches ~64mm across to the arm; **no solver lever closes it** (tether/blend/cap-attach all pin ~85mm) and
+moving the arm inboard punches it through the torso + splits the bodice seam (proven, sweep table in the
+handoff). **Fix = give the dress form a real ARMHOLE SOCKET** so the arm root and the bodice armhole coincide.
+Full plan + measurements + file/line hooks + acceptance gate (cap-shoulder gap <20mm): **`HANDOFF-armhole-
+socket.md`** (+ the [[sewing-sleeve-arms-insight]] memory). At `/preview/8` (tank) + `/preview/7` (dress).
