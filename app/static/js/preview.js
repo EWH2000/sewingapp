@@ -143,7 +143,10 @@ function mountFreeform(pat, ctx) {
     if (formGroup) { scene.remove(formGroup); formGroup = null; }
     if (formShadow) { scene.remove(formShadow); formShadow = null; }
     if (!hasBody) return;
-    formGroup = dressFormGroup(params.body);
+    // Stage B2: arms on the form only for a sleeved garment — SAME predicate the solver lofts
+    // its collider with (PC.hasSleevePiece), so the visible form and the collider can't drift.
+    const showArms = !!(PC && PC.hasSleevePiece && PC.hasSleevePiece(pieces));
+    formGroup = dressFormGroup(params.body, { arms: showArms });
     if (!formGroup.children.length) { formGroup = null; return; }
     scene.add(formGroup);
     const st = formGroup.userData.stack, hem = st && st.rings[0];

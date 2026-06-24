@@ -573,6 +573,46 @@ export function dressFormGeometry(stack, opts = {}) {
   return geo;
 }
 
+// armCapsuleGeometry(arm, opts) → a tapered round capsule (one arm) as a BufferGeometry, built
+// directly in world space from {p0,p1,r0,r1} (Stage B2). A lathe-style ring stack — start
+// hemisphere → frustum body → end hemisphere — quad-stripped like dressFormGeometry (the radius-0
+// pole rings act as fans). The same {p0,p1,r0,r1} the M5c capsule collider reads (shared stack).
+export function armCapsuleGeometry(arm, opts = {}) {
+  const radial = Math.max(6, opts.armRadial || 20);
+  const segs = Math.max(1, opts.armSegs || 8);
+  const capRings = Math.max(2, opts.armCap || 6);
+  const p0 = arm.p0, p1 = arm.p1, r0 = arm.r0, r1 = arm.r1;
+  const ax = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+  const L = Math.hypot(ax[0], ax[1], ax[2]) || 1, dir = [ax[0] / L, ax[1] / L, ax[2] / L];
+  let e1 = [dir[1], -dir[0], 0];                                  // dir × (0,0,1)
+  if (Math.hypot(e1[0], e1[1], e1[2]) < 1e-6) e1 = [0, dir[2], -dir[1]];   // degenerate axis ∥ z
+  { const l = Math.hypot(e1[0], e1[1], e1[2]) || 1; e1 = [e1[0] / l, e1[1] / l, e1[2] / l]; }
+  const e2 = [dir[1] * e1[2] - dir[2] * e1[1], dir[2] * e1[0] - dir[0] * e1[2], dir[0] * e1[1] - dir[1] * e1[0]];
+  const ringsC = [];                                             // {c:[x,y,z], r} along the capsule
+  for (let k = 0; k <= capRings; k++) { const b = (Math.PI / 2) * (k / capRings), co = Math.cos(b); ringsC.push({ c: [p0[0] - dir[0] * co * r0, p0[1] - dir[1] * co * r0, p0[2] - dir[2] * co * r0], r: Math.sin(b) * r0 }); }
+  for (let k = 1; k <= segs; k++) { const t = k / segs; ringsC.push({ c: [p0[0] + dir[0] * t * L, p0[1] + dir[1] * t * L, p0[2] + dir[2] * t * L], r: r0 + (r1 - r0) * t }); }
+  for (let k = 1; k <= capRings; k++) { const g = (Math.PI / 2) * (k / capRings), si = Math.sin(g); ringsC.push({ c: [p1[0] + dir[0] * si * r1, p1[1] + dir[1] * si * r1, p1[2] + dir[2] * si * r1], r: Math.cos(g) * r1 }); }
+  const R = ringsC.length, cols = radial + 1, pos = [], uv = [];
+  for (let i = 0; i < R; i++) {
+    const rc = ringsC[i];
+    for (let j = 0; j <= radial; j++) {
+      const th = (2 * Math.PI * j) / radial, cs = Math.cos(th), sn = Math.sin(th);
+      pos.push(rc.c[0] + rc.r * (cs * e1[0] + sn * e2[0]), rc.c[1] + rc.r * (cs * e1[1] + sn * e2[1]), rc.c[2] + rc.r * (cs * e1[2] + sn * e2[2]));
+      uv.push(j / radial, i / (R - 1));
+    }
+  }
+  const idx = [];
+  for (let i = 0; i < R - 1; i++) for (let j = 0; j < radial; j++) {
+    const a = i * cols + j, b = a + 1, c = (i + 1) * cols + j, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  return geo;
+}
+
 // dressFormGroup(body, opts) → a THREE.Group with the translucent form. group.userData.stack is
 // the SAME ring stack the M5c solver collides against (render + collision can't drift). Returns
 // an empty group (userData.unsupported) if window.BodyForm isn't loaded.
@@ -591,6 +631,13 @@ export function dressFormGroup(body, opts = {}) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.userData.kind = 'dressform'; mesh.renderOrder = -1;
   group.add(mesh);
+  // Stage B2: one translucent capsule per arm, SAME muslin material — shown only when the loft
+  // grew arms (stack.arms present, i.e. opts.arms for a sleeved garment). No-arms render unchanged.
+  if (stack.arms) for (const arm of stack.arms) {
+    const am = new THREE.Mesh(armCapsuleGeometry(arm, opts), mat);
+    am.userData.kind = 'dressform-arm'; am.renderOrder = -1;
+    group.add(am);
+  }
   group.userData.stack = stack; group.userData.body = stack.body;
   return group;
 }

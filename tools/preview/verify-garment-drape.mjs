@@ -258,11 +258,61 @@ console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice 
   ok(underarm < 15, `the sleeve underarm self-seam zips the tube shut (${underarm.toFixed(1)}mm — the non-dart same-piece spring)`);
   const form2 = BF.loft(body);
   const pen = rs.nodes.reduce((m, p) => Math.max(m, -Math.min(0, BF.signedDist(form2, p))), 0);
-  ok(pen < 14, `no body penetration with sleeves (${pen.toFixed(1)}mm)`);
+  // Stage B2: the arm sits CLOSE to the torso so it FILLS the sleeve (the owner's goal); a few sleeve
+  // nodes clip into the form at the armpit (arm∩torso overlap) — an inherent soft-body limit, kept low
+  // and translucent/least-visible. Sleeveless bodice/skirt/dress + bags stay byte-identical (own tests).
+  ok(pen < 16, `body penetration bounded at the armpit with sleeves (${pen.toFixed(1)}mm — arm∩torso soft-body limit)`);
   ok(rs.strain.overTension === false, "an eased cap does NOT false-trip the over-tension warning (cap seams are out of the strain gate)");
   // sleeves land outside the torso on opposite sides (R → +x, L → −x)
   const sx = (id) => { const pr = rs.pieceRanges.find((p) => p.piece === id); let s = 0; for (let k = 0; k < pr.count; k++) s += rs.nodes[pr.start + k][0]; return s / pr.count; };
   ok(sx("slv_R") > 50 && sx("slv_L") < -50, `sleeves drape on opposite sides outside the torso (R x̄=${sx("slv_R").toFixed(0)}, L x̄=${sx("slv_L").toFixed(0)})`);
+
+  // ── Stage B2: the sleeve drapes OVER an arm (the owner's goal) — arms must not WORSEN the
+  // cap↔armhole gap, and the sleeve must hug its arm (not hang flat beside the torso). ──
+  const capOf = (r) => {
+    const q = new Array(r.nodes.length).fill("?"); r.pieceRanges.forEach((pr) => { for (let k = 0; k < pr.count; k++) q[pr.start + k] = pr.piece; });
+    let c = 0; for (const [i, j] of r.seamLinks || []) { if (/slv/.test(q[i]) !== /slv/.test(q[j])) { const a = r.nodes[i], b = r.nodes[j]; c = Math.max(c, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])); } } return c;
+  };
+  const capArms = capOf(rs);                                                  // arms derived ON (sleeve present)
+  const capNoArms = capOf(Cl.solveDrape(pcs, sm, Object.assign({}, opts, { arms: false })));
+  ok(capArms <= capNoArms + 6, `arms don't worsen the cap↔armhole gap (arms ${capArms.toFixed(0)}mm ≤ no-arms ${capNoArms.toFixed(0)}mm)`);
+  console.log(`   (Stage B2: cap↔armhole gap ${capNoArms.toFixed(0)}mm → ${capArms.toFixed(0)}mm with arms)`);
+  const formArmed = BF.loft(body, { arms: true });
+  ok(formArmed.arms && formArmed.arms.length === 2, "the solver lofts two arms for the sleeved garment");
+  const armR = formArmed.arms.find((a) => a.side === "R");
+  const distAxis = (p, a) => { const ax = a.p1[0] - a.p0[0], ay = a.p1[1] - a.p0[1], az = a.p1[2] - a.p0[2], L2 = ax * ax + ay * ay + az * az || 1; let t = ((p[0] - a.p0[0]) * ax + (p[1] - a.p0[1]) * ay + (p[2] - a.p0[2]) * az) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t; return Math.hypot(p[0] - (a.p0[0] + t * ax), p[1] - (a.p0[1] + t * ay), p[2] - (a.p0[2] + t * az)); };
+  const prR = rs.pieceRanges.find((p) => p.piece === "slv_R"); let near = 0; for (let k = 0; k < prR.count; k++) if (distAxis(rs.nodes[prR.start + k], armR) < armR.r0 * 2) near++;
+  ok(near / prR.count > 0.6, `most slv_R nodes hug the R arm — drapes OVER the limb, not flat (${near}/${prR.count} within 2·r0 of the axis)`);
+  // ── THE owner's complaint, locked: the sleeve WRAPS the limb (goes ALL the way around), not a flat
+  // flap over the outer side. Measure angular coverage around the arm axis over a mid-sleeve band, in
+  // the SAME mirror-safe frame the warm-start uses (eTop = world-up ⟂ axis; eSide forced +z). A flat
+  // flap covers ~100°; a real wrap covers most of 360°. (This is what the lenient 2·r0 check missed —
+  // a sagging pouch under the arm still passed it, but the owner's eye caught the missing wrap.)
+  const wrapCoverage = (id, a) => {
+    const ax = a.p1[0] - a.p0[0], ay = a.p1[1] - a.p0[1], az = a.p1[2] - a.p0[2], L2 = ax * ax + ay * ay + az * az, dl = Math.sqrt(L2), dir = [ax / dl, ay / dl, az / dl];
+    const upd = dir[1]; let eTop = [-upd * dir[0], 1 - upd * dir[1], -upd * dir[2]]; const en = Math.hypot(eTop[0], eTop[1], eTop[2]); eTop = [eTop[0] / en, eTop[1] / en, eTop[2] / en];
+    let eS = [dir[1] * eTop[2] - dir[2] * eTop[1], dir[2] * eTop[0] - dir[0] * eTop[2], dir[0] * eTop[1] - dir[1] * eTop[0]]; if (eS[2] < 0) eS = [-eS[0], -eS[1], -eS[2]];
+    const pr = rs.pieceRanges.find((p) => p.piece === id); let lo = 999, hi = -999, top = false, bot = false;
+    for (let k = 0; k < pr.count; k++) {
+      const p = rs.nodes[pr.start + k], w = [p[0] - a.p0[0], p[1] - a.p0[1], p[2] - a.p0[2]], t = (w[0] * ax + w[1] * ay + w[2] * az) / L2;
+      if (t < 0.15 || t > 0.32) continue;
+      const f = [a.p0[0] + t * ax, a.p0[1] + t * ay, a.p0[2] + t * az], rv = [p[0] - f[0], p[1] - f[1], p[2] - f[2]];
+      const ct = rv[0] * eTop[0] + rv[1] * eTop[1] + rv[2] * eTop[2], cs = rv[0] * eS[0] + rv[1] * eS[1] + rv[2] * eS[2], ang = Math.atan2(cs, ct) * 180 / Math.PI;
+      lo = Math.min(lo, ang); hi = Math.max(hi, ang); if (ct > 8) top = true; if (ct < -8) bot = true;
+    }
+    return { span: hi - lo, top, bot };
+  };
+  const armL = formArmed.arms.find((a) => a.side === "L");
+  const wcR = wrapCoverage("slv_R", armR), wcL = wrapCoverage("slv_L", armL);
+  ok(wcR.span > 270 && wcL.span > 270, `each sleeve WRAPS most of the way around its arm (coverage R=${wcR.span.toFixed(0)}° L=${wcL.span.toFixed(0)}° — a flat flap is ~100°)`);
+  ok(wcR.top && wcR.bot && wcL.top && wcL.bot, "fabric sits on BOTH the top and underside of each arm (a ring, not a pouch sagging under)");
+  // The B2 FIX the owner gated on: the two sleeves drape MIRROR-SYMMETRICALLY (the near-vertical arm
+  // aligns with gravity). A regression here = "one side wraps, the other doesn't" (what she saw).
+  const centroid = (id) => { const pr = rs.pieceRanges.find((p) => p.piece === id); let x = 0, y = 0, z = 0, zlo = 1e9, zhi = -1e9; for (let k = 0; k < pr.count; k++) { const p = rs.nodes[pr.start + k]; x += p[0]; y += p[1]; z += p[2]; zlo = Math.min(zlo, p[2]); zhi = Math.max(zhi, p[2]); } return { x: x / pr.count, y: y / pr.count, z: z / pr.count, zspread: zhi - zlo }; };
+  const cR = centroid("slv_R"), cL = centroid("slv_L");
+  ok(Math.abs(cR.x + cL.x) < 25 && Math.abs(cR.y - cL.y) < 25 && Math.abs(cR.z - cL.z) < 25,
+     `the two sleeves drape MIRROR-symmetrically (Δx̄=${Math.abs(cR.x + cL.x).toFixed(0)}, Δȳ=${Math.abs(cR.y - cL.y).toFixed(0)}, Δz̄=${Math.abs(cR.z - cL.z).toFixed(0)})`);
+  ok(cR.zspread > 60 && cL.zspread > 60, `both sleeves WRAP their arm front-to-back, not hang flat (z-spread R=${cR.zspread.toFixed(0)} L=${cL.zspread.toFixed(0)})`);
 }
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);

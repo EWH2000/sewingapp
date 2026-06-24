@@ -80,6 +80,30 @@ let bad = 0; for (let i = 0; i <= 100; i++) { const rr = BF.ringAt(S, S.yMin + (
 ok(bad === 0, `100 sampled rings all positive + b/a in a sane band (${bad} bad)`);
 ok(JSON.stringify(BF.loft(D)) === JSON.stringify(BF.loft(D)), "loft is deterministic (deep-equal)");
 
+console.log("=== Stage B2: arm generation (opts.arms) + capsule collision ===");
+ok(BF.loft(D).arms === undefined, "no arms key without opts.arms (no-arms loft byte-identical)");
+const SA = BF.loft(D, { arms: true });
+ok(Array.isArray(SA.arms) && SA.arms.length === 2, "two arms when requested");
+const AR = SA.arms.find((a) => a.side === "R"), AL = SA.arms.find((a) => a.side === "L");
+ok(AR && AL && AR.p0[0] > 0 && AL.p0[0] < 0, "R arm on +x, L arm on −x");
+ok(AR.p1[1] < AR.p0[1], "arm hangs DOWN (wrist below the socket)");
+ok(AR.r0 > AR.r1, "arm tapers bicep → wrist");
+const rawBicepR = (D.bustMm * 0.32) / (2 * Math.PI);                          // ≈47mm before sleeve ease
+ok(AR.r0 > 0.7 * rawBicepR && AR.r0 < rawBicepR, `r0 ≈ bicep/2π, thinner by sleeve ease (${AR.r0.toFixed(1)}mm vs raw ${rawBicepR.toFixed(1)})`);
+ok(JSON.stringify(BF.loft(D, { arms: true })) === JSON.stringify(BF.loft(D, { arms: true })), "armed loft is deterministic");
+const mid = [(AR.p0[0] + AR.p1[0]) / 2, (AR.p0[1] + AR.p1[1]) / 2, 0];
+ok(BF.insideForm(SA, mid) === true, "arm axis midpoint is inside the form (union)");
+ok(BF.insideForm(BF.loft(D), mid) === false, "...and OUTSIDE the torso-only form (it's the arm, not the torso)");
+const cs = BF.nearestSurface(SA, mid, 6);
+ok(approx(Math.hypot(cs.normal[0], cs.normal[1], cs.normal[2]), 1, 1e-6), "capsule normal is unit");
+ok(cs.normal[1] !== 0, "capsule normal is FULL-3D (tilts in y, unlike the horizontal torso normal)");
+ok(BF.insideForm(SA, cs.point) === false, "capsule projection lands outside the form");
+ok(BF.signedDist(SA, mid) < 0 && BF.signedDist(SA, mid) <= BF.signedDist(BF.loft(D), mid) + 1e-9, "union signedDist = min(torso, arms)");
+ok(Number.isFinite(BF.nearestSurface(SA, [AR.p0[0], AR.p0[1] - 1, 0], 6).point[0]), "near-axis point handled (no NaN)");
+const tp = [10, band("bust").y, 5];   // a torso-interior point, far from any arm
+ok(JSON.stringify(BF.nearestSurface(BF.loft(D), tp, 6)) === JSON.stringify(BF.nearestSurface(SA, tp, 6)),
+   "arms don't perturb a torso-only projection (byte-identical torso path)");
+
 // ── RENDER section (resolver + preview3d.js) ──────────────────────────────────────
 console.log("=== dressFormGroup render (three.js) ===");
 let THREE, P3;
@@ -102,6 +126,14 @@ if (P3 && P3.dressFormGroup) {
   ok(size.x > size.z, `bbox wider than deep (x ${size.x.toFixed(0)} > z ${size.z.toFixed(0)})`);
   ok(g.userData && g.userData.stack && BF.insideForm(g.userData.stack, [0, yB, 0]) === true,
      "group carries the collider stack (render + collision share one stack)");
+  // Stage B2: arms render as extra meshes only when requested; no-arms render unchanged.
+  let g0arms = 0; g.traverse((o) => { if (o.userData && o.userData.kind === "dressform-arm") g0arms++; });
+  ok(g0arms === 0, "no-arms render adds ZERO arm meshes (byte-identical mesh set)");
+  const ga = P3.dressFormGroup(D, { arms: true });
+  let torsoM = 0, armM = 0; ga.traverse((o) => { if (o.userData) { if (o.userData.kind === "dressform") torsoM++; if (o.userData.kind === "dressform-arm") armM++; } });
+  ok(torsoM === 1 && armM === 2, `arms render: 1 torso + 2 arm meshes (got ${torsoM}+${armM})`);
+  ok(ga.userData.stack && ga.userData.stack.arms && ga.userData.stack.arms.length === 2,
+     "render group carries the arm stack (renderer + collider share the same arms)");
 } else if (P3) {
   ok(false, "preview3d.js exports dressFormGroup");
 }

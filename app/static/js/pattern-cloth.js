@@ -29,7 +29,17 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 5;   // 5: set-in SLEEVE drape (placeGarment sleeve wrap + underarm non-dart self-seam spring)
+  const SIM_VERSION = 9;   // 9: sleeve cap de-crumpled — GRADUAL armhole→arm blend over the whole sleeve (a short
+                           //    blend forced a horizontal arm-ring under the shoulder, where the armhole is a vertical
+                           //    slit → it buckled) + the cap INTERIOR tethers smooth (cap EDGE stays free to weld)
+                           // 8: sleeve WRAPS the arm — mirror-safe tube warm-start (eSide forced +z, no handedness
+                           //    flip) + an arm-hug tether confining the sleeve body to a shell around the limb so
+                           //    gravity can't sag it into a pouch underneath ("doesn't go around the arm")
+                           // 7: analytic capsule ARMS on the dress form — sleeve drapes OVER the arm limb (12° arm,
+                           //    body collision; an arm-wrap warm-start was tried + dropped — it twisted the left sleeve)
+                           // 6: arms (intermediate, superseded by 7) — note: arm tuning constants aren't in geomHash,
+                           //    so a behavior change in them needs a SIM_VERSION bump to invalidate cached drapes
+                           // 5: set-in SLEEVE drape (placeGarment sleeve wrap + underarm non-dart self-seam spring)
                            // 4: cloth self-collision (final-settle node repulsion) + garment seam-closeup (free-hem zip)
                            // 3: garment unpinned stitch-up + bounded stretch-to-fit + strain metric
                            // 2: garment gravity drape + dart welds (invalidates pre-dart cached drapes)
@@ -88,6 +98,10 @@
   const G_MM = 9810;   // gravity, mm/s²
 
   const isStrap = (p, seams) => (PF() && PF().isStrapPiece) ? PF().isStrapPiece(p, seams) : false;
+  // A garment with any sleeve piece gets analytic arms on the dress form (Stage B2). SINGLE
+  // source of truth: solveDrape (collider loft) + preview.js (render loft) both gate on this,
+  // so the visible form and the collider can't drift.
+  const hasSleevePiece = (pieces) => (pieces || []).some((p) => p && p.place3d && p.place3d.role === "sleeve");
   function pieceBBoxY(nodes) { let lo = Infinity, hi = -Infinity; for (const n of nodes) { if (n.y < lo) lo = n.y; if (n.y > hi) hi = n.y; } return { lo, hi, H: Math.max(1, hi - lo) }; }
   function pieceBBoxX(nodes) { let lo = Infinity, hi = -Infinity; for (const n of nodes) { if (n.x < lo) lo = n.x; if (n.x > hi) hi = n.x; } return { lo, hi, W: Math.max(1, hi - lo) }; }
   function inferRole(p, idx) {
@@ -186,8 +200,64 @@
         return null;
       };
       const fr = armOf(3), bk = armOf(2);                              // e3 = front cap, e2 = back cap
-      let wrap;
-      if (fr && bk) {
+      const arm = (form.arms || []).find((a) => a.side === (/left|_l|-l/.test(nm) ? "L" : "R"));
+      // Stage B2: WRAP the sleeve as a TUBE around the arm so it goes ALL the way around the limb (the
+      // underarm self-seam closes underneath) instead of hanging as a flat flap over the outer side (the
+      // owner's "doesn't go around the arm"). The frame is built from WORLD axes — eTop = world-up
+      // projected ⟂ the arm axis (the outer/top of the arm), eSide forced toward +z (FRONT) for BOTH
+      // sleeves — so the left and right wrap the SAME way. (The earlier attempt used dir×up, whose
+      // handedness flips between mirrored arms → it twisted the left sleeve. Forcing eSide·(+z)>0 kills
+      // that flip.) Each flat node maps u→θ around the tube (u=½ cap-top→top θ=0; u=0/1 underarm→±π,
+      // underneath) and its depth-below-the-cap-seamline → distance DOWN the arm axis.
+      let wrap, armTether = null;
+      if (arm) {
+        const aLen = Math.hypot(arm.p1[0] - arm.p0[0], arm.p1[1] - arm.p0[1], arm.p1[2] - arm.p0[2]) || 1;
+        const dir = [(arm.p1[0] - arm.p0[0]) / aLen, (arm.p1[1] - arm.p0[1]) / aLen, (arm.p1[2] - arm.p0[2]) / aLen];
+        const upd = dir[1];                                            // up·dir (up = (0,1,0))
+        let eTop = [-upd * dir[0], 1 - upd * dir[1], -upd * dir[2]];   // world-up ⟂ axis → outer/top of the arm
+        const etn = Math.hypot(eTop[0], eTop[1], eTop[2]) || 1; eTop = [eTop[0] / etn, eTop[1] / etn, eTop[2] / etn];
+        let eSide = [dir[1] * eTop[2] - dir[2] * eTop[1], dir[2] * eTop[0] - dir[0] * eTop[2], dir[0] * eTop[1] - dir[1] * eTop[0]];
+        if (eSide[2] < 0) eSide = [-eSide[0], -eSide[1], -eSide[2]];   // FORCE +z (front) → mirror-symmetric wrap
+        const underLocal = (p.nodes[2] && p.nodes[2].y) || by.H * 0.5, top = by.H;
+        const SNUG = skin + 4;                                         // hug the arm closely (a loose wrap sags off the thin limb)
+        const depthOf = (lx, ly) => {
+          const u = (lx - bx.lo) / bx.W;
+          const capY = underLocal + (top - underLocal) * (1 - Math.abs(2 * u - 1));   // cap seamline height (peak at cap-top)
+          return Math.max(0, capY - (ly - by.lo));                    // mm below the cap seamline
+        };
+        const armWrapAt = (lx, ly) => {                               // the tube wrap on the arm
+          const u = (lx - bx.lo) / bx.W;
+          const th = (0.5 - u) * 2 * Math.PI;                         // u=½ → 0 (cap-top, on top); u=0/1 → ±π (underarm, underneath)
+          const depth = depthOf(lx, ly), t = Math.min(1, depth / aLen);
+          const R = (arm.r0 + (arm.r1 - arm.r0) * t) + SNUG;          // arm radius at t + a small clearance
+          const cx = arm.p0[0] + dir[0] * depth, cy = arm.p0[1] + dir[1] * depth, cz = arm.p0[2] + dir[2] * depth;
+          const c = Math.cos(th), s = Math.sin(th);
+          return [cx + R * (c * eTop[0] + s * eSide[0]), cy + R * (c * eTop[1] + s * eSide[1]), cz + R * (c * eTop[2] + s * eSide[2])];
+        };
+        // CAP EDGE rides the bodice armhole arch (a tall vertical slit on the torso side) so the cap seam
+        // CLOSES; the BODY wraps the arm. Blend between them over the first BLEND mm below the cap seamline
+        // — the armhole and the arm don't co-locate (the arm is bolted on OUTBOARD of the armhole to clear
+        // the torso), so without this the body-on-arm tether drags the cap edge ~100 mm off the armhole.
+        let archAt = null;
+        if (fr && bk) {
+          const S = lerp3(fr.S, bk.S, 0.5), frontUnder = fr.U, backUnder = bk.U;
+          const arch = (pp) => pp <= 0.5 ? lerp3(backUnder, S, pp / 0.5) : lerp3(S, frontUnder, (pp - 0.5) / 0.5);
+          archAt = (u) => arch(1 - u);                                // u=1 back-under … ½ shoulder … 0 front-under
+        }
+        const BLEND = (opts && opts.armBlend) || by.H;                // transition cap(on armhole)→body(on arm) over ~the whole sleeve: a SHORT blend forces a horizontal arm-ring right under the shoulder (the armhole is a vertical slit) → it buckles
+        wrap = (lx, ly) => {
+          const armPt = armWrapAt(lx, ly);
+          if (!archAt) return armPt;
+          const b = smoothstep(Math.min(1, depthOf(lx, ly) / BLEND)), ap = archAt((lx - bx.lo) / bx.W);
+          return [ap[0] + (armPt[0] - ap[0]) * b, ap[1] + (armPt[1] - ap[1]) * b, ap[2] + (armPt[2] - ap[2]) * b];
+        };
+        // Tether the sleeve to its smooth warm-start so gravity can't peel the body off the thin arm into a
+        // pouch (the "doesn't go around"), AND so the cap region can't buckle into a crumpled tangle at the
+        // shoulder (the "top gets messy"): the warm-start already puts the cap EDGE on the armhole (blend=0)
+        // and the body on the arm, so holding that smooth shape keeps the join clean. Mirror-symmetric.
+        const TETH = (opts && opts.armTetherDepth != null) ? opts.armTetherDepth : 0;
+        armTether = (lx, ly) => (depthOf(lx, ly) >= TETH ? wrap(lx, ly) : null);
+      } else if (fr && bk) {
         const S = lerp3(fr.S, bk.S, 0.5), frontUnder = fr.U, backUnder = bk.U;
         const hyp = Math.hypot(S[0], S[2]) || 1, outward = [S[0] / hyp, 0, S[2] / hyp];   // away from the Y axis
         const underLocal = (p.nodes[2] && p.nodes[2].y) || by.H * 0.5, top = by.H;
@@ -206,7 +276,7 @@
         wrap = (lx, ly) => { const th = ((lx - bx.lo) / bx.W) * 2 * Math.PI;
           return [cxArm + sign * rTube * Math.cos(th), yBase + (ly - by.lo), rTube * Math.sin(th)]; };
       }
-      place[p.id] = { wrap, pinTest: () => false, role: "sleeve" };
+      place[p.id] = { wrap, pinTest: () => false, role: "sleeve", armTether };
     }
     return { place };
   }
@@ -254,7 +324,10 @@
     const BF = (typeof window !== "undefined") && window.BodyForm;
     let form = null, ringAt = null, gplace = null;
     if (garment && BF) {
-      form = BF.loft(opts.body || BF.DEFAULT_BODY);
+      // Arms when the doc has a sleeve (or forced via opts.arms — the test's A/B). Same predicate
+      // geomHash uses (via the hashed pieces), so cache write/re-solve agree. Bags never reach here.
+      const wantArms = opts.arms != null ? !!opts.arms : hasSleevePiece(pieces);
+      form = BF.loft(opts.body || BF.DEFAULT_BODY, wantArms ? { arms: true, arm: opts.arm } : undefined);
       ringAt = (y) => BF.ringAt(form, y);
       gplace = placeGarment(pieces, seams, form, ringAt, opts).place;
     }
@@ -365,6 +438,46 @@
     // ── state: position-Verlet (X current, P previous; velocity is implicit) ──
     const X = new Float64Array(3 * N), Pp = new Float64Array(3 * N);
     for (let i = 0; i < N; i++) { const q = pos[i]; X[3 * i] = Pp[3 * i] = q[0]; X[3 * i + 1] = Pp[3 * i + 1] = q[1]; X[3 * i + 2] = Pp[3 * i + 2] = q[2]; }
+
+    // ── Sleeve arm-hug tether (Stage B2) ──────────────────────────────────────────────────
+    // A set-in sleeve, sewn to an armhole that necessarily sits INBOARD of the arm (the arm must be
+    // outboard to clear the torso), would otherwise sag straight off the thin limb into a pouch
+    // underneath — "doesn't go around the arm". So each sleeve BODY node is confined to a thin shell
+    // around its warm-start wrap on the arm (the inward analog of the bag inflation tether): it can
+    // droop a little, but can't slide around to the underside. The cap region is left free to attach to
+    // the armhole. Built from the wrap (mirror-symmetric) → both sleeves hug identically. Garment +
+    // sleeve only; bags & sleeveless garments never populate armHug → byte-identical.
+    const armRest = new Float64Array(3 * N), armHug = new Uint8Array(N);
+    let nArmHug = 0, armHugOn = false;
+    const ARM_HUG_CAP = (opts && opts.armHugCap) || 16;               // mm: max drift of a body node off its arm wrap
+    if (garment && gplace) {
+      // The cap-seam EDGE nodes stay FREE (welded onto the bodice armhole) — tethering them gathers the
+      // eased cap into a bunched/crumpled mess (the "top gets messy") and a tight pull drags the bodice
+      // seam open. Every OTHER sleeve node tethers to its GRADUAL wrap (cap region transitions armhole→arm
+      // over the whole sleeve, so near the cap edge the target is close to the armhole, not the arm —
+      // it can't yank the cap edge off + the cap stays smooth), and the lower body fully wraps the arm so
+      // it can't sag off the thin limb. Built from the wrap → mirror-symmetric; garment+sleeve only.
+      const capEdge = new Uint8Array(N);
+      for (let k = 0; k < kIc.length; k++) { capEdge[kIc[k]] = 1; capEdge[kJc[k]] = 1; }
+      for (const pr of pieceRanges) {
+        const gp = gplace[pr.piece];
+        if (!gp || gp.role !== "sleeve" || !gp.armTether) continue;
+        for (let q = 0; q < pr.count; q++) {
+          const i = pr.start + q; if (capEdge[i]) continue;
+          const uv = localUV[i], tgt = gp.armTether(uv[0], uv[1]);
+          if (tgt) { armHug[i] = 1; armRest[3 * i] = tgt[0]; armRest[3 * i + 1] = tgt[1]; armRest[3 * i + 2] = tgt[2]; nArmHug++; }
+        }
+      }
+    }
+    function armHugProject() {
+      for (let i = 0; i < N; i++) {
+        if (!armHug[i] || invm[i] === 0) continue;
+        const o = 3 * i;
+        const dx = X[o] - armRest[o], dy = X[o + 1] - armRest[o + 1], dz = X[o + 2] - armRest[o + 2];
+        const d = Math.hypot(dx, dy, dz);
+        if (d > ARM_HUG_CAP) { const s = ARM_HUG_CAP / d; X[o] = armRest[o] + dx * s; X[o + 1] = armRest[o + 1] + dy * s; X[o + 2] = armRest[o + 2] + dz * s; }
+      }
+    }
 
     // constraint counts + per-list Lagrange multipliers (reset each substep)
     const nS = sI.length, nB = bI.length, nK = kI.length, nKc = kIc.length;
@@ -552,6 +665,7 @@
       }
       if (weldI.length) projectWelds();
       if (collideOn) bodyProject();
+      if (armHugOn && nArmHug) armHugProject();
       if (selfCollideNow) projectSelfCollision();
       return maxMove;
     }
@@ -679,6 +793,7 @@
         substep(stitchIters, alphaSeam, 0, capOff);        // cap seams INERT here (else they drag the shoulder before it pins)
       }
       if (stitchUnpinned) pinNow();                        // NOW pin the stitched shoulder/waist line (hangs from its support)
+      armHugOn = true;                                      // hold the sleeve body on the arm through cap-attach + gravity (bodice stitch-up above is untouched)
       // SLEEVE cap-attach (M6): with the bodice closed + pinned, ease the cap seams capOff→near-weld in
       // ZERO-G so the sleeve closes onto the armhole BEFORE its own weight drops it away. The bodice
       // ARMHOLE nodes (the bodice side of each cap pair) are momentarily ANCHORED so the sleeve closes
@@ -906,5 +1021,5 @@
     return { nodes, tris, localUV, pieceRanges: blob.pieceRanges, seamLinks: [], welds: [], mode: "cached", energy: 0 };
   }
 
-  window.PatternCloth = { solveDrape, geomHash, deriveFlip, encodeDrape, decodeDrape, SIM_VERSION };
+  window.PatternCloth = { solveDrape, geomHash, deriveFlip, encodeDrape, decodeDrape, hasSleevePiece, SIM_VERSION };
 })();

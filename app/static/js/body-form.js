@@ -27,6 +27,26 @@
   const ASPECT = 0.72;
   const DEFAULT_BODY = { heightMm: 1650, bustMm: 920, waistMm: 740, hipMm: 980 };
 
+  // Analytic ARM capsules (Stage B2) — appended to the loft return ONLY when opts.arms is
+  // truthy, so the limbless (no-arms) form is byte-identical. A sleeve drapes OVER these.
+  // Tapered round capsules: socket just outside the shoulder ellipse, a FULL arm to the wrist,
+  // axis down-and-out. Bicep/wrist GIRTHS derive from bust (no doc field) unless authored.
+  const ARM = {
+    bicepFromBust: 0.32,   // bicep circumference ≈ 0.32·bust  [GATE]
+    wristFromBicep: 0.58,  // wrist circumference ≈ 0.58·bicep [GATE]
+    lenFrac: 0.42,         // arm length as a fraction of stature (to the wrist) [GATE]
+    downDeg: 12,           // axis tilt off vertical (down-and-out). 12° drapes CONSISTENTLY across
+                           // garments (both sleeves wrap with only a mild front/back offset) and keeps
+                           // the arm∩torso overlap shallow (low armpit penetration). [GATE]
+    socketOut: 0.85,       // socket sits r0·0.85 beyond the shoulder side — close enough to FILL the
+                           // sleeve (the owner's goal), far enough that the torso∩arm overlap stays
+                           // shallow (the armpit residual is a soft-body limit, kept ≲ test bound). [GATE]
+    socketDrop: 0.02,      // dropped 0.02·H below the shoulder band [GATE]
+    rMin: 20,              // radius floor (mm) — guards a garbage bicep
+    rMaxFrac: 0.6,         // radius ceiling = 0.6·shoulder.a — can't swallow the torso
+    sleeveEase: 0.08,      // the arm is drawn/collided this much THINNER than the sleeve's bicep, so a
+  };                       // fitted sleeve (≈ arm girth) has wearing ease to sit just OUTSIDE it. [GATE]
+
   // Silhouette bands, each at its ANATOMICAL height as a fraction of stature (`yf` = height/
   // stature). The limbless torso floats on an implied stand (hem ≈ mid-thigh, shoulder ≈ acromion)
   // so a skirt/dress has room to HANG below the waist toward the floor. `meas` ties a band to a
@@ -103,7 +123,75 @@
       const a = splineA(anchors, y);
       rings.push({ y: y, a: a, b: aspect * a, cx: 0, cz: 0 });
     }
-    return { rings, yMin: yLo, yMax: yHi, body: b, bands, aspect };
+    const out = { rings, yMin: yLo, yMax: yHi, body: b, bands, aspect };
+    if (opts.arms) out.arms = buildArms(b, bands, opts.arm);   // keyless otherwise → no-arms loft byte-identical
+    return out;
+  }
+
+  // Two tapered round capsules (L/R) from the shoulder band + bicep/wrist circumferences.
+  // Returned on stack.arms; the renderer (preview3d) and the M5c collider both read this same
+  // descriptor (shared-stack invariant). Bicep/wrist derive from bust unless authored on `b`.
+  function buildArms(b, bands, override) {
+    const sh = bands.find((bd) => bd.role === "shoulder");
+    if (!sh) return [];
+    const A = override ? Object.assign({}, ARM, override) : ARM;
+    const H = b.heightMm, TWO_PI = 2 * Math.PI;
+    const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+    const bicepC = +b.bicepMm > 0 ? +b.bicepMm : A.bicepFromBust * b.bustMm;
+    const wristC = +b.wristMm > 0 ? +b.wristMm : A.wristFromBicep * bicepC;
+    const ease = 1 - (A.sleeveEase || 0);                              // arm thinner than the sleeve's bicep
+    const r0 = clamp((bicepC / TWO_PI) * ease, A.rMin, A.rMaxFrac * sh.a);   // radius = circumference/2π
+    const r1 = clamp((wristC / TWO_PI) * ease, 12, r0);                      // tapers bicep → wrist
+    const L = A.lenFrac * H, phi = (A.downDeg * Math.PI) / 180;
+    const arms = [];
+    for (const [side, sgn] of [["R", 1], ["L", -1]]) {
+      const p0 = [sgn * (sh.a + r0 * A.socketOut), sh.y - A.socketDrop * H, 0];
+      const dir = [sgn * Math.sin(phi), -Math.cos(phi), 0];            // down-and-out, z=0
+      const p1 = [p0[0] + dir[0] * L, p0[1] + dir[1] * L, p0[2] + dir[2] * L];
+      arms.push({ side, p0, p1, r0, r1 });   // render + collision share r0/r1 (no poke-through)
+    }
+    return arms;
+  }
+
+  // ── point-to-tapered-capsule (cylinder body + hemispherical caps via the t-clamp) ──
+  // foot on the axis segment (clamped), the radial vector, and the local radius there.
+  function capsuleFoot(arm, p) {
+    const p0 = arm.p0, p1 = arm.p1;
+    const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
+    const L2 = ax * ax + ay * ay + az * az || 1;
+    const wx = p[0] - p0[0], wy = p[1] - p0[1], wz = p[2] - p0[2];
+    let t = (wx * ax + wy * ay + wz * az) / L2;
+    if (t < 0) t = 0; else if (t > 1) t = 1;                 // clamp → hemispherical caps
+    const fx = p0[0] + t * ax, fy = p0[1] + t * ay, fz = p0[2] + t * az;
+    const rx = p[0] - fx, ry = p[1] - fy, rz = p[2] - fz;
+    const rad = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    const R = arm.r0 + (arm.r1 - arm.r0) * t;
+    return { t, fx, fy, fz, rx, ry, rz, rad, R };
+  }
+  function signedDistCapsule(arm, p) { const f = capsuleFoot(arm, p); return f.rad - f.R; }
+  function insideCapsule(arm, p) { return signedDistCapsule(arm, p) < 0; }
+  // surface point + FULL-3D unit normal (the capsule normal genuinely tilts in y, unlike the
+  // torso's horizontal-only normal). On-axis (rad≈0) picks a stable perpendicular to the axis.
+  // ejectOutward: for a node trapped in the torso∩arm OVERLAP (armpit), a radial projection would
+  // push it onto the arm's INNER (torso-facing) side → stuck inside the torso → ping-pong. Then we
+  // eject it to the arm's OUTER side (⊥ axis, away from x=z=0) so the arm never pushes toward the
+  // torso. Used ONLY in the overlap (nearestSurface decides), so the bulk sleeve isn't dragged out.
+  function capsuleSurface(arm, p, skinMm, ejectOutward) {
+    const skin = skinMm == null ? 4 : skinMm;
+    const f = capsuleFoot(arm, p), Rs = f.R + skin;
+    let nx, ny, nz;
+    if (f.rad < 1e-9 || ejectOutward) {
+      // outward direction at the foot, ⊥ axis (away from the body's vertical axis).
+      const ax = arm.p1[0] - arm.p0[0], ay = arm.p1[1] - arm.p0[1], az = arm.p1[2] - arm.p0[2];
+      const aL = Math.sqrt(ax * ax + ay * ay + az * az) || 1, dx = ax / aL, dy = ay / aL, dz = az / aL;
+      let ox = f.fx, oz = f.fz;
+      if (Math.abs(ox) < 1e-6 && Math.abs(oz) < 1e-6) { ox = arm.p0[0] >= 0 ? 1 : -1; oz = 0; }
+      const od = ox * dx + oz * dz;
+      nx = ox - od * dx; ny = -od * dy; nz = oz - od * dz;
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      if (!ejectOutward && f.rad >= 1e-9) { nx = f.rx / f.rad; ny = f.ry / f.rad; nz = f.rz / f.rad; }
+    } else { nx = f.rx / f.rad; ny = f.ry / f.rad; nz = f.rz / f.rad; }
+    return { point: [f.fx + nx * Rs, f.fy + ny * Rs, f.fz + nz * Rs], normal: [nx, ny, nz], pushed: f.rad < f.R };
   }
 
   // ring (a,b) at height y by linear interpolation between bounding slices (clamped).
@@ -117,24 +205,31 @@
              cx: lo.cx + f * (hi.cx - lo.cx), cz: lo.cz + f * (hi.cz - lo.cz) };
   }
 
-  // strictly inside the lofted ellipsoid-of-rings? (false above/below the form).
-  function insideForm(stack, p) {
+  // strictly inside the lofted ellipsoid-of-rings TORSO? (false above/below the form).
+  function insideTorso(stack, p) {
     const y = p[1];
     if (y < stack.yMin || y > stack.yMax) return false;
     const r = ringAt(stack, y), dx = p[0] - r.cx, dz = p[2] - r.cz;
     return (dx * dx) / (r.a * r.a) + (dz * dz) / (r.b * r.b) < 1;
   }
+  // Public: inside the TORSO ∪ (when present) any arm capsule. No-arms = byte-identical
+  // (the loop is skipped, so this is exactly insideTorso).
+  function insideForm(stack, p) {
+    if (insideTorso(stack, p)) return true;
+    if (stack.arms) for (const arm of stack.arms) if (insideCapsule(arm, p)) return true;
+    return false;
+  }
 
   // project a point radially onto the ring ellipse + a skin offset. Horizontal-only (the
   // returned point keeps p's height) so a body constraint never slides a node vertically and
   // unzips a seam. Returns { point, normal (outward, unit, y=0), pushed (was it inside?) }.
-  function nearestSurface(stack, p, skinMm) {
+  function torsoSurface(stack, p, skinMm) {
     const skin = skinMm == null ? 4 : skinMm;
     const y = Math.max(stack.yMin, Math.min(stack.yMax, p[1]));
     const r = ringAt(stack, y);
     const A = r.a + skin, B = r.b + skin;
     let dx = p[0] - r.cx, dz = p[2] - r.cz;
-    const pushed = insideForm(stack, p);
+    const pushed = insideTorso(stack, p);
     if (Math.abs(dx) < 1e-9 && Math.abs(dz) < 1e-9) {   // dead centre — push to +x by default
       return { point: [r.cx + A, y, r.cz], normal: [1, 0, 0], pushed: true };
     }
@@ -146,15 +241,43 @@
     const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
     return { point: [px, y, pz], normal: [nx, 0, nz], pushed };
   }
+  // Public: project an inside node OUT of the TORSO ∪ arms. No-arms = byte-identical (early
+  // return). With arms: among the shapes the point is inside, prefer a projection that lands
+  // OUTSIDE the whole union (a genuine one-step exit, smallest such move); else the deepest
+  // push (and the per-substep loop in bodyProject finishes the job). Avoids the armpit ping-pong.
+  function nearestSurface(stack, p, skinMm) {
+    if (!stack.arms || !stack.arms.length) return torsoSurface(stack, p, skinMm);
+    const cands = [];
+    const dT = signedDistTorso(stack, p);
+    if (dT < 0) cands.push({ s: torsoSurface(stack, p, skinMm), pen: -dT });
+    for (const arm of stack.arms) {
+      const dC = signedDistCapsule(arm, p);
+      if (dC < 0) cands.push({ s: capsuleSurface(arm, p, skinMm), pen: -dC });   // radial (ejecting drags the sleeve off the armhole)
+    }
+    if (!cands.length) return torsoSurface(stack, p, skinMm);   // safety (caller gates on insideForm)
+    let exit = null, deepest = cands[0];
+    for (const c of cands) {
+      if (c.pen > deepest.pen) deepest = c;
+      if (!insideForm(stack, c.s.point) && (!exit || c.pen < exit.pen)) exit = c;
+    }
+    return (exit || deepest).s;
+  }
 
   // approximate signed distance to the side wall (negative inside) — for a collision stiffness
   // ramp. Uses the ellipse-space radius scaled by the smaller semi-axis. Not exact, monotone.
-  function signedDist(stack, p) {
+  function signedDistTorso(stack, p) {
     const y = p[1];
     if (y < stack.yMin || y > stack.yMax) return Math.max(stack.yMin - y, y - stack.yMax);
     const r = ringAt(stack, y), dx = p[0] - r.cx, dz = p[2] - r.cz;
     const rad = Math.sqrt((dx * dx) / (r.a * r.a) + (dz * dz) / (r.b * r.b));
     return (rad - 1) * Math.min(r.a, r.b);
+  }
+  // Public: union SDF = min over the torso + arm capsules (negative inside). No-arms =
+  // byte-identical. This is the metric the penetration test reads.
+  function signedDist(stack, p) {
+    let d = signedDistTorso(stack, p);
+    if (stack.arms) for (const arm of stack.arms) { const dC = signedDistCapsule(arm, p); if (dC < d) d = dC; }
+    return d;
   }
 
   // per-anchor-band circumference (Ramanujan-forward) — the test asserts these == the
