@@ -360,7 +360,7 @@ Environment=BASE_PATH=/sewing
 # Default printer (FALLBACK). The printer is a SEPARATE LAN host, addressed by
 # its own IP — NOT host.containers.internal (which maps to the host's real
 # interface, not the printer). No host CUPS is involved. The app prefers the
-# value stored in the SQLite settings table (editable from her phone); this env
+# value stored in the SQLite settings table (editable from a phone); this env
 # is only the default when none is saved.
 Environment=SEWING_PRINTER_URI=ipp://192.168.8.198:631/ipp/print
 Volume=sewingdata:/data:U
@@ -392,16 +392,16 @@ cercoachapp's (the root SSD is the SPOF; the volume rides the backup).
    a SQLite `settings` table on the named volume, edited from an in-app **Settings**
    page. Resolved URI = `settings.printer_uri or env`. Because `/data` is a
    persistent named volume, the chosen printer and its calibration state survive
-   image rebuilds and container re-creation — and are editable from her phone with
+   image rebuilds and container re-creation — and are editable from a phone with
    no shell access. The Settings page shows `printer-make-and-model` (from a
-   Get-Printer-Attributes probe) so she can confirm the right machine, plus
+   Get-Printer-Attributes probe) so the user can confirm the right machine, plus
    `media-default` and a "Print calibration page" button.
 
 ---
 
 ## 5. Failure handling (plain language, never a stack trace)
 
-Map every condition to something the partner can act on.
+Map every condition to something the user can act on.
 
 **Submit-time** (in `ipp_print`, `http.client timeout=10s`):
 - Connection refused / `OSError` "No route to host" (wrong/changed IP, 631 closed)
@@ -414,7 +414,7 @@ Map every condition to something the partner can act on.
   `0x`-code. Rare for a plain PDF on IPP Everywhere.
 
 All raise `PrinterError(message, code)`; the endpoint returns **HTTP 502** with
-`{code, message}` (502 = the printer's fault, not hers; UI shows the message
+`{code, message}` (502 = the printer's fault, not the user's; UI shows the message
 verbatim).
 
 **After submit** (poll `GET /print/{job_id}/status` → Get-Job-Attributes, every
@@ -431,7 +431,7 @@ paper or jammed — those surface as *job-state*, not a submit error.
   (dedupe by `job-name`/client token) so a retry can't double-print a 20-sheet job.
 
 **Defensive:** every print path also offers the **PDF download** (§ UX), so a
-wedged printer never blocks her — she can AirPrint/USB it from a device.
+wedged printer never blocks the user — they can AirPrint/USB it from a device.
 
 ---
 
@@ -488,7 +488,7 @@ paper and SSRF, not external attackers.
   returns 429 on double-taps / stuck retry loops; `copies` clamped 1–5. A single
   in-flight job per printer prevents two devices interleaving a tiled set in the
   output bin. Sufficient for one trusted household user; can sit behind the same
-  `basic_auth` the photo gallery uses if she wants a lock.
+  `basic_auth` the photo gallery uses if a lock is wanted.
 - **No secrets:** the printer URI isn't sensitive; nothing logs documents or
   exposes the volume.
 
@@ -509,7 +509,7 @@ becomes impossible to skip on fresh setup, and never nags once confirmed.
 
 **Both direct-print AND download, always side by side:**
 - **"Print at home"** → `POST /print` (confirm sheet → preflight → submit → live
-  job-state poll). Best when she's near the printer.
+  job-state poll). Best when the user is near the printer.
 - **"Download PDF"** → `GET /pattern/{id}.pdf` (attachment). Always available even
   with no printer or a wedged one; AirPrint from an iPad / print elsewhere. The
   download page repeats the loud instruction: **"Print at 100% / Actual Size — NOT

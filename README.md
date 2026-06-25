@@ -4,7 +4,7 @@ Author sewing patterns and **print them at home at exact 1:1 scale** (tiled acro
 US-Letter sheets) or save them for later. A phone-friendly web app for the
 household, served from the home hub at **`command.home.arpa/sewing/`**.
 
-Built for someone who sews from purchased PDF patterns and wants to make her own.
+Built for home sewists who sew from purchased PDF patterns and want to make their own.
 First focus: bags (a parametric **boxy tote**), growing toward garments.
 
 ## What works
@@ -18,7 +18,7 @@ First focus: bags (a parametric **boxy tote**), growing toward garments.
 - **Calibration-first** — a one-time test page confirms a new printer prints true
   before any pattern is allowed to print.
 - **Save patterns** — stored server-side in SQLite (backed up nightly), so they
-  sync across her devices.
+  sync across your devices.
 
 ## How it's built
 FastAPI + Jinja2 + SQLite, one rootless-podman container (systemd-user quadlet),
@@ -48,9 +48,10 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 ## Status
 The 1:1 print spine is physically proven (single-page and tiled). The freeform
-multi-piece editor, the 3D assembled preview, and a gravity garment-drape on a
-parametric dress form are all done (see `CLAUDE.md` for the full milestone log).
-**Next: the interactive garment-authoring UI** (draw curves/darts/notches + enter
-body measurements on `/edit`) — see `HANDOFF-editor-authoring-ui.md`.
+multi-piece editor, interactive garment authoring (curves/darts/notches +
+measurements on `/edit`), the 3D assembled preview, and a gravity garment-drape on
+a parametric dress form are all done (see `CLAUDE.md` for the full milestone log).
+**Next: set-in sleeves in 3D** — drafting a sleeve and printing it 1:1 already work;
+the way the sleeve cap drapes on the form is being refined.
 
 MIT licensed. A personal home-server project.

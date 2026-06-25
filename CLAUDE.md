@@ -2,7 +2,7 @@
 
 A phone-friendly tool for the household to **author sewing patterns** and **print
 them at home at exact 1:1 scale** (tiled across US-Letter sheets) or save them for
-later. Built for the owner's partner, who sews from purchased PDF patterns; this
+later. Built for a home sewist who sews from purchased PDF patterns; this
 authors *new* ones. First focus: bags (boxy tote), evolving toward garments.
 
 Hub tile **"Sewing"** (scissors) → `/sewing/` → **:8006**. House-styled like the
@@ -45,7 +45,7 @@ generation server-side (would need Node or a reportlab re-port + dual maintenanc
 
 ## The calibration-first gate (don't remove)
 True 1:1 can't be assumed for a *new* printer. Per printer URI, a `calibrated:<uri>`
-flag gates real-pattern printing: until she prints the test page, measures it, and
+flag gates real-pattern printing: until the user prints the test page, measures it, and
 taps **"It measured right"**, only the calibration page prints (download always
 works). On this box's HP LaserJet Pro (192.168.8.198) 1:1 is physically confirmed.
 
@@ -117,9 +117,9 @@ auto-arrange on load. **Next: SVG/DXF export (free via `makerjs.exporter`); per-
 radius; overlap warning; true pocket↔panel linking.** Interaction (SVG drag UX on iPad) is
 the only part not auto-tested — verify by drawing.
 
-**3D assembled preview — M0–M3 + strap handles DONE; owner gate cleared on her touchscreen laptop (2026-06-21); M4 next.** Full build spec in
+**3D assembled preview — M0–M3 + strap handles DONE; user-tested on a touchscreen laptop (2026-06-21); M4 next.** Full build spec in
 `PREVIEW.md`: an in-browser three.js preview of the *sewn-up* product, on the road to a
-soft-body **garment cloth-drape** (the real goal — she's making skirts + tank-style
+soft-body **garment cloth-drape** (the real goal — the target use is skirts + tank-style
 dresses; sleeveless-first by design, sleeves are an additive M6 escape hatch, nothing
 thrown away). Keystone = a new top-level **seam graph** (`seams[]`, schema 2→3, additive,
 no DB migration). Three steps / six milestones (M0–M6): box preview → seam authoring +
@@ -177,7 +177,7 @@ just cut quantity — it no longer renders a parallel pair; fixed 2026-06-21). *
 strap bands are plain leather (no pattern texture); notch `{edge,t,type}` + anchors UI; dart
 self-seams; atelier re-skin.
 
-**M4 / Step 3a — inflated 3D bag DONE (2026-06-21, owner gate cleared on her touchscreen laptop).**
+**M4 / Step 3a — inflated 3D bag DONE (2026-06-21, user-tested on a touchscreen laptop).**
 A freeform-with-seams bag now previews as a sewn, **inflated**, orbitable soft bag (the default view
 on `/preview/{id}`; a **Fold ⇄ Inflated** toggle keeps the rigid M3 fold). Hand-rolled XPBD mass-spring
 solver `app/static/js/pattern-cloth.js` (pure/headless `window.PatternCloth.solveDrape`): warm-starts
@@ -196,14 +196,14 @@ re-solves only on an edit/detail/floor change; opaque `params_json`, no server c
 also exports `geomHash`/`encodeDrape`/`decodeDrape`. Box/M3-fold paths + print spine + calibration gate
 byte-identical. Tests: `tools/preview/verify-cloth.mjs` (26) + `verify-cloth-mesh.mjs` (18); the prep
 layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) + `verify-fold.mjs` (61) /
-`verify-fold-mesh.mjs` (15) stay green. **Strap SNAP-TO-SURFACE DONE (2026-06-22, owner gate cleared):**
+`verify-fold-mesh.mjs` (15) stay green. **Strap SNAP-TO-SURFACE DONE (2026-06-22, user-tested):**
 the drape view snaps each handle anchor from the folded rim to the nearest settled surface node
 (`preview3d.snapToSurface`), so the handle attaches flush to the inflated bag (the fold view keeps the
 raw rim anchors). **Deferred — NEXT:** welding/true-volume, plain-leather strap texture — all leaning
 into **M5** (Step-3b garment on a lofted dress form). Build-tracking + locked decisions live in `PREVIEW.md`
 §9 (the per-milestone starting-orders handoffs have been retired into this status + `PREVIEW.md`; git keeps them).
 
-**M5a / Step-3b garment AUTHORING foundation DONE (2026-06-22, owner-gated — she confirmed the seeded
+**M5a / Step-3b garment AUTHORING foundation DONE (2026-06-22, user-tested — confirmed the seeded
 garments print + look right; flat-laying preview understood as expected pre-form/gravity).** The doc can
 now *represent* a dress, with every new feature **lowering to the existing `cut`/`seam` line-kinds inside
 `pieceGeom`/`pieceExtras` BEFORE `freeformToDoc` builds `paths`** — print spine (`pattern-pdf.js`/
@@ -226,7 +226,7 @@ bags id 3/id 4 untouched. The seeded bodice tiles to a valid 8-sheet 0-bad-page 
 Tests: `verify-editor-geom.mjs` (85) + `verify-seams.mjs` (27) extended, new `tools/preview/verify-lowering.mjs`
 (16); full headless suite green.
 
-**M5b / Step-3b parametric DRESS FORM DONE (2026-06-22, owner-gated — "body and form editor work well").**
+**M5b / Step-3b parametric DRESS FORM DONE (2026-06-22, user-tested — "body and form editor work well").**
 A garment preview now shows a translucent **dress form** sized from the doc's `body` measurements, with a
 live **Measurements panel**. New pure `app/static/js/body-form.js` (`window.BodyForm`, no three/DOM/RNG):
 `loft(body,opts)→ringStack` lofts a limbless torso from a stack of **elliptical** rings (wider than deep,
@@ -244,7 +244,7 @@ M5c). Tests: `tools/preview/verify-body-form.mjs` (31 — circumferences match m
 catches an a/b swap, height scales Y, insideForm/nearestSurface, re-loft, no overshoot, determinism, the
 translucent render); full suite green.
 
-**M5c / Step-3b GRAVITY GARMENT DRAPE — basic drape DONE (2026-06-22, owner-gated — garments hang
+**M5c / Step-3b GRAVITY GARMENT DRAPE — basic drape DONE (2026-06-22, user-tested — garments hang
 believably on the form).** A garment (doc with `body`) now **drapes under gravity ON the dress form**
 instead of lying flat. `pattern-cloth.js` `solveDrape` gains an **`opts.garment` branch** (the bag inflate
 path is byte-identical when off — `verify-cloth.mjs` 26 green): **warm start = `placeGarment` wraps each
@@ -263,7 +263,7 @@ support. Tests: `tools/preview/verify-garment-drape.mjs` (15) + body-form reposi
 **NEXT (M5c-step2): the bust dart shapes the bodice** (triangulatePiece cuts the wedge + selfSeamPairs sews
 the legs), then self-collision + settle tuning.
 
-**M5c-step2 / DART SHAPING DONE (2026-06-22, owner-gated — "coming along great").** A wedge dart now
+**M5c-step2 / DART SHAPING DONE (2026-06-22, user-tested — "coming along great").** A wedge dart now
 **shapes the bodice in 3D**: `triangulatePiece` routes a darted piece through `G.loweredBoundary` (cuts the
 wedge from the sim mesh, tags the two legs in `boundaryMeta` `{dart,leg,t}`) — the no-dart path is
 byte-identical, so bags/plain panels are untouched. `pattern-mesh.selfSeamPairs(mesh,dartId)` pairs the legs
@@ -275,15 +275,15 @@ once, byte-identical). Tests: `verify-garment-drape.mjs` 15→20 (dart legs tagg
 gravity, front gains depth, no NaN); full suite green. **NEXT (M5c-step3): self-collision** (cloth-on-cloth,
 final settle passes) **+ settle tuning** (the drape freezes "warm" — slightly wavy). Then the **interactive
 editor authoring UI** (curve drag-handle / dart / notch / measurements on `/edit` — the data model + print
-lowering already exist, so it's additive — starting orders in `HANDOFF-editor-authoring-ui.md`).
+lowering already exist, so it's additive). [Done in a later entry below.]
 
-**M5c-step3 / BODICE-GAP FIX + "doesn't-fit" stretch-to-fit + warning DONE (2026-06-22, owner-gated — "that
+**M5c-step3 / BODICE-GAP FIX + "doesn't-fit" stretch-to-fit + warning DONE (2026-06-22, user-tested — "that
 fix worked, there are no more gaps").** The tank bodice drape showed gaps (the form peeking through), which was
 **three compounding bugs**, all measured host-side: (1) **the shoulder seam was never sewn** — it lies inside
 the pinned top-8% band, so both endpoints had `invm=0` and `projectDist` skipped it (frozen ~175 mm open); (2)
 **the shoulder seams were mis-paired in the seed** (`e3↔e3` straight, but the mirror-wrapped back needs them
 **crossed** `e3↔e5` like the sides); (3) **the bodice was child-sized** (front+back 520 mm around vs a 920 mm
-body). Now the bodice closes to **~7 mm** (Standard) — owner confirmed no gaps. The fixes, all GARMENT-only
+body). Now the bodice closes to **~7 mm** (Standard) — confirmed no gaps. The fixes, all GARMENT-only
 (bag inflate path byte-identical — `verify-cloth.mjs` 26/26; print spine/calibration gate untouched):
 - **`pattern-cloth.js` solver** (`SIM_VERSION 2→3`, invalidates cached drapes): the zero-g stitch-up now runs
   **UNPINNED** so the top seam actually sews, then pins the stitched shoulder/waist line for the gravity phase
@@ -310,13 +310,13 @@ body). Now the bodice closes to **~7 mm** (Standard) — owner confirmed no gaps
   when oversized, no body penetration, dart excluded from strain, skirt fixture, rollback flag); new
   `verify-seed-bodice.mjs` (18 — every inter-piece seam's edges match ≤2 mm, bodice fits, all examples still
   lower to a schema-3 print doc). Full headless suite green (print spine sentinels included).
-**KNOWN LIMITATION (deferred to settle tuning, owner aware):** the **hanging skirt/dress side seam** doesn't
+**KNOWN LIMITATION (deferred to settle tuning, known):** the **hanging skirt/dress side seam** doesn't
 fully close near the form's lower edge (~26 mm dress hip / ~34 mm skirt at Standard, more at Fine) — a soft-body
 limitation, NOT a fit problem, so it correctly does not warn. The bodice (pinned both ends) is the clean one.
 **Still next:** self-collision + settle tuning (would also tighten the hanging seams); the interactive editor
 authoring UI; revisiting the waist dart on a fitted body (the body now provides most of the bust shape).
 
-**M5c-step4 / SELF-COLLISION + SKIRT-SEAM CLOSEUP + WAIST DE-JAG DONE (2026-06-22, owner-gated — "looks much
+**M5c-step4 / SELF-COLLISION + SKIRT-SEAM CLOSEUP + WAIST DE-JAG DONE (2026-06-22, user-tested — "looks much
 better, commit it").** Three garment-only additions in `pattern-cloth.js` (bag inflate path BYTE-IDENTICAL —
 `verify-cloth.mjs` 26/0; explicit tote byte-diff = 0; print spine/calibration gate untouched), `SIM_VERSION 3→4`:
 - **Cloth self-collision** (`projectSelfCollision`) — fixes the lower bodice CRUMPLING THROUGH ITSELF (no
@@ -335,7 +335,7 @@ better, commit it").** Three garment-only additions in `pattern-cloth.js` (bag i
   re-settle (`closeReGrav=0.2`, no clamp) holds the closure while the bulk drape (set at full gravity) relaxes the
   over-stretch. **Skirt side seam 34→1 mm, dress 26→11 mm**; p95 stretch dropped 1.68→1.21 as a bonus. Inert on an
   already-closed (body-molded) bodice seam.
-- **Taubin λ\|μ surface smoothing** (`smoothSteps=6`, λ0.6/μ-0.63) — the owner's "jagged at the bottom" was sharp
+- **Taubin λ\|μ surface smoothing** (`smoothSteps=6`, λ0.6/μ-0.63) — the "jagged at the bottom" report was sharp
   folds in a tight ring at the WAIST (the pinned+welded+skirt-seamed edges converge there + the fabric compresses;
   ~11 mm surface roughness vs ~2 mm elsewhere). Shape-preserving λ\|μ passes (μ<0 counters λ-shrink) iron it to
   ~2.7 mm. Adjacency BRIDGES the already-close seam/weld pairs (so it can't pull a closed seam open) + re-snaps
@@ -343,18 +343,18 @@ better, commit it").** Three garment-only additions in `pattern-cloth.js` (bag i
   the pinned waist line too (`smoothPins` — `pinNow` froze it jagged); shoulders shift only ~5 mm.
 - The `mode` settled/warm verdict now uses the **p90** of per-node motion, not the worst node (one self-collision
   contact rails at `vmax` forever). A residual ~3-4 mm bulk jitter remains ("warm") — inherent solver under-
-  resolution at this mesh density, owner-accepted (the visible defects are fixed). Tests: `verify-garment-drape.mjs`
+  resolution at this mesh density, accepted (the visible defects are fixed). Tests: `verify-garment-drape.mjs`
   33→**46** (self-collision separates/deterministic/gated; smoothing lowers roughness + keeps seams closed +
   preserves the warning; geomHash re-keys on sc/thick/scw/sm, bag hash byte-identical). Full headless + print-spine
   suites green. **Still next:** the interactive editor authoring UI (curve/dart/notch/measurements on `/edit`);
   revisiting the waist dart on a fitted body.
 
-**INTERACTIVE GARMENT-AUTHORING UI on `/edit` DONE (2026-06-22, owner-gated — "everything checked out").** The
-owner can now **DRAW** garments (curves, darts, notch types, body measurements) instead of only getting them from
+**INTERACTIVE GARMENT-AUTHORING UI on `/edit` DONE (2026-06-22, user-tested — "everything checked out").** The
+user can now **DRAW** garments (curves, darts, notch types, body measurements) instead of only getting them from
 `tools/seed-examples.mjs`. Purely additive UI on `editor.js` + `edit.html` over the schema-3 model M5a already
 lowers to `cut`/`seam` BEFORE the print spine — `pattern-pdf.js`/`printing.py`/calibration gate/SSRF guard
 **byte-identical**, no DB migration, schema stays 2 until a schema-3 field is present. Built MVP-first; each chunk
-owner-gated. Validated by a design + 3-lens adversarial workflow (it caught the sign convention, an undo bug, a
+user-tested. Validated by a design + 3-lens adversarial workflow (it caught the sign convention, an undo bug, a
 quad→cubic data-loss trap, board-explosion clamps, and the Bezier-lib bug below).
 - **Foundation:** `pieceGeomCached` key now includes `edges`/`darts` (curve/dart edits were a silent no-op without
   it). New pure `pattern-geom` exports `worldToEdgeLocal` (exact analytic inverse of `edgeLocalToWorld`),
@@ -396,8 +396,8 @@ quad→cubic data-loss trap, board-explosion clamps, and the Bezier-lib bug belo
   green. **Still deferred:** sew-mode refinements (match-notches/ease/gather); the node-delete edge-merge distortion;
   per-frame curve/dart-drag re-flatten perf (throttle if it lags); revisiting the waist dart on a fitted body.
 
-**ATELIER VISUAL OVERHAUL DONE (2026-06-22, owner-gated — "very impressive work").** The app now carries its own
-**atelier "cutting-table" identity** instead of the generic house shell, tuned for the owner's **1920×1080 touchscreen
+**ATELIER VISUAL OVERHAUL DONE (2026-06-22, user-tested — "very impressive work").** The app now carries its own
+**atelier "cutting-table" identity** instead of the generic house shell, tuned for a **1920×1080 touchscreen
 laptop** with **large, glasses-friendly text** — the long-deferred "atelier re-skin + widescreen" workstream (DESIGN.md
 "Visual identity" + the [[sewing-atelier-theme]] memory). **Presentation-only** — the print/geometry spine is
 BYTE-IDENTICAL (`git diff` over `pattern-pdf.js`/`printing.py`/`pattern-geom.js`/fold/cloth/mesh/`preview3d.js`/
@@ -433,10 +433,10 @@ guard are untouched; no DB/schema change.
   height, distinct `#ed-numeric` (brass edge), sticky actions. Canvas stays the light `#fdfdfb` paper.
 - **Settings (`settings.html`):** re-skinned to match (section heads w/ brass underline, two plates side-by-side ≥900px);
   `#printer-uri`/`#printer-info` + `save-printer`/`test-printer` preserved.
-**Still deferred (visual):** the owner-only-eyeball items (no headless render test) — pattern-tissue thumbnails + the
-widescreen feel were owner-confirmed; an optional warm "atelier night" dark mode; folding `.pv` into `styles.css`.
+**Still deferred (visual):** the eyeball-only items (no headless render test) — pattern-tissue thumbnails + the
+widescreen feel were confirmed by hand; an optional warm "atelier night" dark mode; folding `.pv` into `styles.css`.
 
-**SET-IN SLEEVES — Stage A (drafting + 1:1 print) DONE (2026-06-23, owner-gated — "retest checks out, good to keep
+**SET-IN SLEEVES — Stage A (drafting + 1:1 print) DONE (2026-06-23, user-tested — "retest checks out, good to keep
 going").** The M6 "sleeves" escape hatch is now triggered (a real sleeved attempt appeared) and built in TWO gated
 stages; Stage A = author + print a set-in sleeve at 1:1, Stage B = drape it in 3D (next). A sleeve is just another
 freeform piece — the print spine (`pattern-pdf.js`/`printing.py`/calibration gate/SSRF guard) is **byte-identical**
@@ -461,7 +461,7 @@ the one Stage-B solver gap).
   bodice front/back + their armholes, drafts a PAIR (R + L, each its own piece, `count:1`), wires per sleeve: front
   cap(e3)↔front armhole + back cap(e2)↔back armhole (both `ease:0.06`) + underarm SELF-seam e1↔e4, and adds matching
   balance notches on the bodice armholes (single=front, double=back). A "Sleeve (set-in)" option in the Type select.
-- **⚠️ THE BUG THAT BLANKED THE EDITOR (owner hit it at the gate, fixed):** `commit()` only snapshots undo-history —
+- **⚠️ THE BUG THAT BLANKED THE EDITOR (surfaced during the review, fixed):** `commit()` only snapshots undo-history —
   it does NOT re-normalize the live `state.pieces` (only undo/redo + load do). Every other add-path pushes a
   COMPLETE piece (`rectPiece` has `placements:[]`), but `sleevePiece` omitted it, so `+ Sleeve` pushed a raw sleeve
   and the next `render()` threw `p.placements.forEach` of undefined in `drawPaths` — and because `applyCamera()` runs
@@ -497,16 +497,16 @@ so they don't drag the then-pinned shoulder open, then eased onto the armhole in
 bodice pins); the underarm tube closes (0mm — a non-dart same-piece seam now sews as a `seamPairs` spring); no body
 penetration; eased cap doesn't false-warn (out of the strain gate); sleeves land outside the torso R→+x/L→−x; ~34/44
 cap pairs <15mm. `verify-garment-drape.mjs` now 54 (the working properties locked as a regression guard); full suite
-green; print spine untouched. Deployed for the owner's visual gate. **OPEN PROBLEM:** the cap-SHOULDER join — a
+green; print spine untouched. Deployed for the visual review. **OPEN PROBLEM:** the cap-SHOULDER join — a
 cluster near the shoulder settles ~100mm off the armhole (the sleeve's hanging weight pulls the cap-top off faster
 than the seam holds it; a stiff mesh can't be dragged back by the boundary seam alone). Ruled out: warm-start
-distance, attach iters, ease level, armhole anchoring (all tested). **Owner's call: build the ARMS (Stage B2) NEXT
+distance, attach iters, ease level, armhole anchoring (all tested). **Decision: build the ARMS (Stage B2) NEXT
 — a limb to drape OVER will make the cap problem visible/solvable AND improve the physics via self-separation (the
 sleeve currently hangs flat against the torso, self-crumpling, hard on the eye).** Stage B1 is committed but NOT
-owner-gated (the cap gap). Deep state + the B2 plan: **`HANDOFF-sleeve-3d.md`** (+ the [[sewing-sleeve-arms-insight]]
-memory). The whole feature lives at `/preview/8` (seeded "Sleeved Tank").
+user-tested (the cap gap). Deep state + the B2 plan: the local handoff `HANDOFF-sleeve-3d.md` (gitignored,
+not in the repo) + the [[sewing-sleeve-arms-insight]] memory. The whole feature lives at `/preview/8` (seeded "Sleeved Tank").
 
-**SLEEVES — Stage B2 (dress-form ARMS + sleeve wraps the limb) WIP-COMMITTED (2026-06-24, owner reviewed
+**SLEEVES — Stage B2 (dress-form ARMS + sleeve wraps the limb) WIP-COMMITTED (2026-06-24, reviewed —
 "pretty close, needs the armhole socket to be production worthy").** The sleeve now drapes OVER an analytic
 capsule **arm** instead of hanging flat beside the limbless torso. All garment-only; **print spine +
 calibration gate byte-identical** (`pattern-pdf.js`/`printing.py`/`pattern-geom.js`/fold/mesh/`main.py`
@@ -529,8 +529,9 @@ bodice armhole is a vertical slit on the torso side, the arm must be bolted OUTB
 cap reaches ~64mm across to the arm; **no solver lever closes it** (tether/blend/cap-attach all pin ~85mm) and
 moving the arm inboard punches it through the torso + splits the bodice seam (proven, sweep table in the
 handoff). **Fix = give the dress form a real ARMHOLE SOCKET** so the arm root and the bodice armhole coincide.
-Full plan + measurements + file/line hooks + acceptance gate (cap-shoulder gap <20mm): **`HANDOFF-armhole-
-socket.md`** (+ the [[sewing-sleeve-arms-insight]] memory). At `/preview/8` (tank) + `/preview/7` (dress).
+Full plan + measurements + file/line hooks + acceptance gate (cap-shoulder gap <20mm): the local handoff
+`HANDOFF-armhole-socket.md` (gitignored — and SUPERSEDED, see the next entry) + the [[sewing-sleeve-arms-insight]]
+memory. At `/preview/8` (tank) + `/preview/7` (dress).
 
 **SLEEVE CAP-GAP — armhole-socket plan REFUTED; root cause measured; rewrite scoped (2026-06-24, no code
 shipped — all experiments reverted, tree byte-identical to `3a1d9c8`, suite green 61/52/26).** Spent the
@@ -546,6 +547,6 @@ arm x/downDeg(12→88°)/bent, gravity(→0)/tether/stiffness/cap-attach-iters, 
 cap-shoulder hard-weld. **Real fix = a sleeve-cap DRAPE REWRITE** (loft the cap region from the FULL bodice
 armhole 3D curve to an arm ring with correct seam correspondence + let the cap gather/ease) — a
 substantial dedicated effort, NOT a tweak. Full diagnosis + dead-end table + design + file/line hooks +
-acceptance gate: **`HANDOFF-sleeve-cap-drape.md`** (supersedes `HANDOFF-armhole-socket.md`) + the updated
-[[sewing-sleeve-arms-insight]] memory. The committed wrap (`3a1d9c8`) is owner-liked + unchanged; ship as
+acceptance gate: the local handoff `HANDOFF-sleeve-cap-drape.md` (gitignored, not in the repo) + the updated
+[[sewing-sleeve-arms-insight]] memory. The committed wrap (`3a1d9c8`) was well-received + is unchanged; ship as
 -is until the rewrite session. Develop the rewrite against the **pure warm-start** number.

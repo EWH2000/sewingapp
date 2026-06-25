@@ -17,8 +17,8 @@
 
 ## 1. Purpose & the bright line
 
-Today the app authors flat pattern pieces and prints them 1:1. The partner has to
-**hold the pieces in her head** — imagine how front + back + sides + base fold and
+Today the app authors flat pattern pieces and prints them 1:1. The user has to
+**hold the pieces in their head** — imagine how front + back + sides + base fold and
 sew into a boxy tote, or how a bodice front and back drape into a dress. The
 assembled 3D preview closes that gap: tap **"Preview"**, see the *sewn-up thing* in
 3D, orbit it, sanity-check the shape before cutting fabric.
@@ -36,13 +36,13 @@ the way this becomes a swamp:
   must relax a cloth simulation. This is expensive, stochastic, and only verifiable
   by eye.
 
-**The real goal is the draped case** — the partner is already attempting dresses,
+**The real goal is the draped case** — the user is already attempting dresses,
 and a fold-up preview that only works for boxes would miss the point. But you do not
 start by writing a cloth solver. You start by building the **seam graph** — the
 explicit "edge X of piece A is sewn to edge Y of piece B" data — because *both* the
 rigid fold-up and the cloth drape are driven by exactly that graph. Steps 1 and 2
 are the deliberate on-ramp that builds and proves the shared foundation Step 3 needs;
-Step 3 is the destination. She is willing to work through the hard patches to get
+Step 3 is the destination. The plan accepts working through the hard patches to get
 there. This document plans all three so the early code doesn't have to be thrown away.
 
 The three steps, and which side of the bright line each lives on:
@@ -89,7 +89,7 @@ The preview is a new consumer bolted onto the existing spine; it changes none of
   to the existing `cut`/`seam` line-kinds before `freeformToDoc` builds `paths`, so
   the printed pattern is exactly what it is today. The 3D preview is **read-only** of
   the same document; it never feeds the printer.
-- **iPad-friendly.** The partner authors on an iPad. Touch orbit, a budget that
+- **iPad-friendly.** The user authors on an iPad. Touch orbit, a budget that
   holds on an M-class tablet single core, native import maps (Safari 16.4+).
 - **Headless geometry tests in `tools/`.** The deterministic parts (mesh build, fold
   math, triangulation, edge correspondence) get `.mjs` tests like the existing
@@ -182,7 +182,7 @@ one page further out:
 | `/preview/{id}` (new) | ✅ | ✅ | ✅ | ✅ pure-JS XPBD + poly2tri (Step 3) |
 
 The iPad authoring/printing flows stay exactly as fast as today; the 3D libs are paid
-for only when she taps "Preview". The Step-3 "cloth solver" column is **pure JS**
+for only when the user taps "Preview". The Step-3 "cloth solver" column is **pure JS**
 (`pattern-cloth.js` + the small `poly2tri` vendor) — no WASM blob (§6.1). **The preview
 page loads the same classic geom stack as `/edit`** (browser.maker.js → maker-shim →
 pattern-geom, `defer`, *before* the import map + module), so `G.pieceGeom(piece)` is
@@ -206,7 +206,7 @@ Reasons:
   editor, mirrors the Maker.js gating exactly, and gives the heavy 3D view its own
   full-screen canvas without fighting the editor's SVG layout. A "Preview" entry
   joins the tab bar (`base.html`), and `/edit` grows a "Preview →" button.
-- **Step 3 as its own module is wise** (and the owner agrees): `pattern-cloth.js`,
+- **Step 3 as its own module is wise** (a deliberate decision): `pattern-cloth.js`,
   `pattern-mesh.js`, `body-form.js`, `preview3d.js` are cleanly separable from the
   print/edit code, can be developed and tested in isolation, and can be disabled
   wholesale (the page simply doesn't load them) if the drape isn't ready. It is
@@ -324,7 +324,7 @@ actually present.
 ```
 
 Printed-pattern impact: none required (the long edge is already the right length); we
-*may* emit gather balance-notches as existing `cut` ticks so she knows where to gather.
+*may* emit gather balance-notches as existing `cut` ticks so the user knows where to gather.
 Drape impact: the solver resamples the long edge to the short edge's length within
 `region`, leaving slack that buckles into folds — standard Marvelous-Designer/
 GarmentCode gather semantics.
@@ -750,7 +750,7 @@ has no built-in loft.)
 Measurements → geometry: height scales the Y extent; each of bust/waist/hip solves the
 ring's `(a,b)` semi-axes for the target circumference at a fixed depth:width aspect
 (Ramanujan's perimeter approximation), Catmull-Rom interpolated between bands. "Change
-waist to 76" re-lofts in <1 ms — the control parameters *are* her measurements, the
+waist to 76" re-lofts in <1 ms — the control parameters *are* the user's measurements, the
 big win over SMPL/MakeHuman.
 
 **Collision is analytic, not a mesh/SDF.** Following GarmentCodeData (which uses a
@@ -801,7 +801,7 @@ WebGPU today (Safari 26 / iPadOS 26 ships it), but the solver starts on the CPU.
 - **Effort (honest):** 3a ~6–10 sessions (proves sewing + stability + cache end-to-end,
   the riskiest plumbing). 3b ~10–20 sessions and the most uncertain in the whole plan —
   the stability protocol on *real, slightly-inconsistent* hand-drawn patterns is where
-  the hard patches live. This is the part she's signing up to work through.
+  the hard patches live. This is the part that demands working through.
 
 ---
 
@@ -827,7 +827,7 @@ dependency-light for exactly this reason):
   UX which is also manually verified): build it and draw on the actual device.
 - **The drape *look*** — does the dress hang believably? Eyeball it against the real
   sewn garment; this is a preview, not a digital twin.
-- **Stitch-up stability on real patterns** — the make-or-break. Test on her actual
+- **Stitch-up stability on real patterns** — the make-or-break. Test on actual
   saved patterns (a tote, a dress attempt), watch for explosions/NaN, tune the §6.6
   protocol. Keep a small corpus of real docs as regression fixtures even though the
   pass/fail is visual.
@@ -871,9 +871,9 @@ focused sessions; estimates, not commitments — 3b especially.)
 - [x] **M0 — Loader spike (~1–2 sessions). DONE 2026-06-21.** Vendored three r184
   (`three.module.js` + `three.core.js` + OrbitControls) + a `/preview/{id}` route +
   `preview.html` + `preview.js`, rendering a hardcoded orbitable cube. **Gate cleared:**
-  import map + touch orbit confirmed on her actual iPad; print spine untouched.
+  import map + touch orbit confirmed on an iPad; print spine untouched.
 - [x] **M1 — Step 1 box preview (~2–4). DONE 2026-06-21.** `docToMesh` + per-face pattern
-  texturing for the boxy tote; `verify-box-mesh.mjs` (18 checks). Gate cleared on her iPad —
+  texturing for the boxy tote; `verify-box-mesh.mjs` (18 checks). Gate cleared on an iPad —
   proportioned, pattern-textured box; flat leather straps (arc length = strap length); a
   studio/atelier look + "finished measurements" spec plate; inches/cm units. (`preview3d.js`
   imports only `three` so the test runs in Node via `tools/preview/three-resolver.mjs`.)
@@ -881,7 +881,7 @@ focused sessions; estimates, not commitments — 3b especially.)
   (`EdgeRef {piece:<id>, edge:i}`, stable/unique piece ids, `G.normalizeSeams`, edge-identity
   stable under node-move/radius — `tools/tiling/verify-seams.mjs`), Sew-mode selection UX on
   `/edit` (tap edge↔edge → seam; connector + seam list; per-seam fold-angle preset), round-trips
-  through save + undo/redo. Gate cleared on her iPad. **Deferred to M3+:** notch `{edge,t,type}`
+  through save + undo/redo. Gate cleared on a touchscreen device. **Deferred to M3+:** notch `{edge,t,type}`
   upgrade + anchors UI, dart authoring/self-seams, seam flip (the fold makes direction visible).
 - [x] **M3 — Step 2 rigid fold-up. DONE 2026-06-21.** `pattern-fold.js` (pure/headless
   `window.PatternFold.foldDoc`: spanning-forest BFS + forward kinematics + LM closure solve;
@@ -891,7 +891,7 @@ focused sessions; estimates, not commitments — 3b especially.)
   dashed gap seams, **outward-normal UV flip** (so inward-facing panels' pattern text isn't
   mirror-reversed). Routing + fold readout + **Floor-piece override** (auto-detect base by
   hinge-degree, persisted additive `foldRoot`); Sew-mode **flip-direction toggle**. Tests
-  `tools/preview/verify-fold.mjs` (33) + `verify-fold-mesh.mjs` (9). Gate cleared on her iPad.
+  `tools/preview/verify-fold.mjs` (33) + `verify-fold-mesh.mjs` (9). Gate cleared on a touchscreen device.
   **Refinements vs this doc:** root = max hinge-degree, not largest area (a tall tote's largest
   panel is a wall, which would lay the bag on its face); the worked tote's cycle count is **4**,
   not the "~2" §5.2 implies; and **§3.6(a)'s tote JSON has an edge-index slip** — it pairs front's
@@ -905,7 +905,7 @@ focused sessions; estimates, not commitments — 3b especially.)
     it isn't twisted; count×2 grab auto-mirrors to the opposite face and count×2 span renders a
     parallel pair. Additive per-piece `role` + editor Type toggle. *Deferred: plain-leather bands
     (no pattern texture).*
-- [x] **M4 — Step 3a inflated bag. DONE 2026-06-21 (owner gate cleared on her touchscreen
+- [x] **M4 — Step 3a inflated bag. DONE 2026-06-21 (user-tested on a touchscreen
   laptop).** `pattern-cloth.js` (pure/headless `window.PatternCloth.solveDrape`): warm-start
   from the M3 fold's `{pos,quat}`, per-seam sew direction derived from the warm start (mirrors
   `inferFlip`), the §6.6 protocol — zero-gravity eased stitch-up (seam compliance `1e-1→1e-6`,
@@ -923,7 +923,7 @@ focused sessions; estimates, not commitments — 3b especially.)
   prep layer (`verify-mesh.mjs` 15 / `verify-seam-correspondence.mjs` 16) green. **Corrected the
   spec:** per-face pressure is NOT self-limiting on a free-top-edge bag (it buckles at a knife-edge
   threshold; bend can't damp it — it's a global mode), so the per-node tether is what makes
-  inflation robust across her real totes. **Strap snap-to-surface DONE (2026-06-22):** the drape
+  inflation robust across real totes. **Strap snap-to-surface DONE (2026-06-22):** the drape
   view snaps each handle anchor from the folded rim to the nearest settled node, so handles attach
   flush to the inflated bag. **Deferred — NEXT:** welding/true-volume, plain-leather strap texture,
   notch/dart authoring — leaning into M5. Also this session: fixed a span-strap `count×2` bug (was a
@@ -934,7 +934,7 @@ focused sessions; estimates, not commitments — 3b especially.)
     honoring the fold's direction (`seamPairs`).
 - [~] **M5 — Step 3b garment on a form (~10–20). LARGELY DONE (2026-06-22), gates cleared.**
   `body-form.js` (loft + analytic ellipse collider) driven by `body`; gravity drape, pinning,
-  fabric presets, curves/darts in the drape. **Gate cleared** on her touchscreen laptop across
+  fabric presets, curves/darts in the drape. **Gate cleared** on a touchscreen laptop across
   M5a (authoring foundation), M5b (parametric dress form), M5c-step1 (gravity drape), -step2 (dart
   shaping), and **-step3 (bodice-gap fix + bounded stretch-to-fit + a "doesn't-close" warning —
   "no more gaps")**. The bodice closes cleanly: stitch-up runs **unpinned** so the top seam sews
@@ -958,7 +958,7 @@ focused sessions; estimates, not commitments — 3b especially.)
     contact node rails at vmax). Tests: `verify-garment-drape.mjs` 33→**46**; bag sentinel + print
     spine byte-identical. **Still open:** the **interactive editor authoring UI** (curve/dart/notch/
     measurements on `/edit` — data model + print lowering already exist). A residual ~3–4 mm bulk
-    "warm" jitter remains (inherent solver under-resolution; owner-accepted).
+    "warm" jitter remains (inherent solver under-resolution; accepted as a known limitation).
   **Gate:** a simple flat garment drapes believably on a measurement-fit form. ✓
 - [ ] **M6 (optional, deferred) — TSL-compute acceleration / MPFB body.** Only if the
   CPU budget or dress-form fidelity proves limiting in real use.
@@ -969,20 +969,20 @@ warm start that makes the drape tractable.
 
 ---
 
-## 10. Open questions for the owner
+## 10. Open questions for the user
 
 1. **Dress-form fidelity — RESOLVED (2026-06-21): sleeveless torso is enough for now.**
-   The smooth limbless lofted torso (bust/waist/hip, §6.7) is the M5 target. She's only
-   made skirts + tank-style dresses so far; no sleeves/collars seen yet. Sleeves stay an
+   The smooth limbless lofted torso (bust/waist/hip, §6.7) is the M5 target. So far the
+   target garments are skirts + tank-style dresses; no sleeves/collars yet. Sleeves stay an
    **additive M6 escape hatch** (CC0 MPFB body + a collider swap) — and crucially the
    on-ramp doesn't get thrown away to add them: the seam graph, triangulation, XPBD
    solver, stitching, fabric presets, and the whole schema-3 data model carry forward
    unchanged; only the *collider* gains arms. So building sleeveless-first costs nothing
    later. (Still open: the exact trigger to start M6 — confirm when a real sleeved
    attempt appears.)
-   **UPDATE (2026-06-23): the M6 trigger FIRED — the owner asked for sleeves.** Built as
+   **UPDATE (2026-06-23): the M6 trigger FIRED — the user asked for sleeves.** Built as
    SET-IN sleeves in two gated stages (see `~/sewingapp/CLAUDE.md` status). **Stage A DONE
-   + owner-gated:** a freeform sleeve PIECE (5-node bell, two cubic cap edges eased into the
+   + user-tested:** a freeform sleeve PIECE (5-node bell, two cubic cap edges eased into the
    armhole) authored via a "+ Sleeve" button and printed 1:1 — print spine byte-identical, no
    collider change. Confirmed the on-ramp held: the seam graph / curves / ease / notches model
    carried the sleeve unchanged. **Stage B1 (NEXT) = drape beside the limbless torso** (sleeve
@@ -996,16 +996,17 @@ warm start that makes the drape tractable.
    sleeve-cap easing. 3b can ship with light curve/dart support and grow it; the full
    curve/dart/gather machinery is specced but not all needed on day one.
 3. **Where the settled-drape cache lives.** In-document `preview3d` (recommended — rides
-   CRUD + the nightly backup, syncs across her devices, but inflates the doc by tens of
+   CRUD + the nightly backup, syncs across devices, but inflates the doc by tens of
    KB) vs an IndexedDB-only client cache (smaller docs, but device-locked + unbacked,
-   re-drapes on a new device). Recommendation stands at in-document; confirm she's fine
-   with the doc size.
-4. **How much authoring vs preview.** Should Sew mode also let her *define* darts/
+   re-drapes on a new device). Recommendation stands at in-document; confirm the doc size
+   is acceptable.
+4. **How much authoring vs preview.** Should Sew mode also let the user *define* darts/
    gathers/curves in the editor (full authoring), or is the first pass "preview what the
    seam graph implies" with darts/curves added later? This sets the M2 UI scope.
 5. **Measurements source.** Enter bust/waist/hip per-pattern (in `body`) or once as a
    shared profile (a new Setting) reused across patterns? A shared profile is friendlier
-   but adds a Settings surface and a "whose body" question if patterns are gifts.
+   but adds a Settings surface and a "whose body" question when patterns are made for
+   different people.
 6. **Fidelity expectations.** Is "a believable shape preview to sanity-check before
    cutting" the agreed bar (it is what this plan delivers), explicitly *not* a
    photoreal digital twin? Worth confirming so 3b doesn't get chased toward render

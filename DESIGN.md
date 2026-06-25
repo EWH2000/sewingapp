@@ -1,8 +1,8 @@
 # Sewing — design decisions (server-fit redesign)
 
-A pattern-authoring tool for the household: lets the partner **create her own
+A pattern-authoring tool for the household: lets the user **create their own
 sewing patterns** and **print them at home at exact 1:1 scale** (tiled across US
-Letter sheets) or save them for later. She currently sews from purchased PDF
+Letter sheets) or save them for later. The user currently sews from purchased PDF
 patterns; this authors *new* ones. First focus: **bags** (boxy tote), evolving
 toward garments without a rewrite.
 
@@ -34,16 +34,16 @@ So this tool is a **sibling app**, not a dashboard module.
 |---|---|---|
 | Shape | Standalone app `~/sewingapp/` (mirrors `cercoachapp/` layout) | Matches the house pattern; nothing else fits |
 | Port / path / tile | **:8006** · Caddy `/sewing/` · hub tile **"Sewing"** (`scissors` icon, Home tab) | 8000–8005 taken; 8006 free (verified) |
-| Storage | **Server-side SQLite** (FastAPI JSON pattern API) on a named volume + nightly backup timer | Syncs across her phone/iPad/desktop (author anywhere, print where the printer is); rides the backup that covers the SPOF root SSD. IndexedDB-only would be unbacked + device-locked |
+| Storage | **Server-side SQLite** (FastAPI JSON pattern API) on a named volume + nightly backup timer | Syncs across the user's phone/iPad/desktop (author anywhere, print where the printer is); rides the backup that covers the SPOF root SSD. IndexedDB-only would be unbacked + device-locked |
 | Front-end libs | **Vendored ESM, no build step — for now** | Matches the box's "drop files & refresh" convention; works on the LAN offline. Through the bag phases the deps are `pdf-lib` (+ maybe `Maker.js`), which drop in without bundling. **Trigger to add a build step (Vite/esbuild): when we embed FreeSewing `@freesewing/core`** (garments era) — its dependency graph makes hand-vendoring impractical |
 | Root needed? | **None** — high port, rootless, all `systemctl --user` | Unlike most tasks on this box, no root-SSH handoff |
 
 ## Visual identity — the atelier theme (evolving, noted 2026-06-21)
-Sewing is a **much larger tool** than the other house apps, so (per the owner) it earns its
+Sewing is a **much larger tool** than the other house apps, so it earns its
 own distinctive visual identity rather than staying bound to the generic house shell (light
 cards + the `#e0653a` orange accent). **Precedent:** the advanced climate app carries its own
 BMS-style theme tailored to its domain; Sewing should likewise grow an **atelier /
-haberdashery** identity — the materials of her world (paper patterns, fabric, leather
+haberdashery** identity — the materials of the user's world (paper patterns, fabric, leather
 handles, brass hardware, a studio cutting table).
 
 - **First instance — the 3D preview page (`/preview`, built 2026-06-21).** A deliberate
