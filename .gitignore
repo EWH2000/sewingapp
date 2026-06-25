@@ -26,5 +26,12 @@ tools/**/*.png
 *.swp
 *~
 
-# local debugging screenshots (not source)
+# local debugging screenshots (not source) — incl. the owner's pasted issue screenshots
 Screenshots/
+ArmsIssue*.png
+
+# Internal session handoffs / dev notes — they narrate the owner's hands-on reviews,
+# directives, device, and reactions (private/relational user info). Keep them LOCAL,
+# off the public remote. The checked-in project docs (CLAUDE.md, DESIGN.md, PREVIEW.md,
+# PRINTING.md, README.md) stay tracked — gitignoring those would break the project.
+HANDOFF-*.md

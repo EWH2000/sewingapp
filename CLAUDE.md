@@ -531,3 +531,21 @@ moving the arm inboard punches it through the torso + splits the bodice seam (pr
 handoff). **Fix = give the dress form a real ARMHOLE SOCKET** so the arm root and the bodice armhole coincide.
 Full plan + measurements + file/line hooks + acceptance gate (cap-shoulder gap <20mm): **`HANDOFF-armhole-
 socket.md`** (+ the [[sewing-sleeve-arms-insight]] memory). At `/preview/8` (tank) + `/preview/7` (dress).
+
+**SLEEVE CAP-GAP — armhole-socket plan REFUTED; root cause measured; rewrite scoped (2026-06-24, no code
+shipped — all experiments reverted, tree byte-identical to `3a1d9c8`, suite green 61/52/26).** Spent the
+session implementing the armhole socket (carve torso SDF + reseat arm at the scye) + a headless cap-gap
+harness, then proving it (and EVERY other lever) can't close the ~86mm cap-shoulder gap. **The gap is
+100% a WARM-START artifact** (pure warm-start with all solve phases zeroed = 86mm; the full solve leaves
+it byte-unchanged) and **z-dominated** (the cap wraps the arm tube ⟂ the vertical-slit armhole; cap node
+at z+18 must sew to a bodice armhole node at z−63). The cap EDGE is set by the **refine** (snaps to the
+armhole, 4mm) not the `wrap`, then the solve spreads it to 85mm because the cap interior rides the
+perpendicular arm tube + the rigid mesh can't be re-closed by the eased boundary seam; and only **3 of ~21
+armhole nodes are pinned** so there's nothing fixed to weld the cap to. Dead ends (don't re-try): socket,
+arm x/downDeg(12→88°)/bent, gravity(→0)/tether/stiffness/cap-attach-iters, warm-start cap-region-hang,
+cap-shoulder hard-weld. **Real fix = a sleeve-cap DRAPE REWRITE** (loft the cap region from the FULL bodice
+armhole 3D curve to an arm ring with correct seam correspondence + let the cap gather/ease) — a
+substantial dedicated effort, NOT a tweak. Full diagnosis + dead-end table + design + file/line hooks +
+acceptance gate: **`HANDOFF-sleeve-cap-drape.md`** (supersedes `HANDOFF-armhole-socket.md`) + the updated
+[[sewing-sleeve-arms-insight]] memory. The committed wrap (`3a1d9c8`) is owner-liked + unchanged; ship as
+-is until the rewrite session. Develop the rewrite against the **pure warm-start** number.
