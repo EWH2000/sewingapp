@@ -550,3 +550,41 @@ substantial dedicated effort, NOT a tweak. Full diagnosis + dead-end table + des
 acceptance gate: the local handoff `HANDOFF-sleeve-cap-drape.md` (gitignored, not in the repo) + the updated
 [[sewing-sleeve-arms-insight]] memory. The committed wrap (`3a1d9c8`) was well-received + is unchanged; ship as
 -is until the rewrite session. Develop the rewrite against the **pure warm-start** number.
+
+**SLEEVE CAP-SHOULDER HOLE — CLOSED (2026-06-27, owner-gated "hole is gone", shipped `2c93f42`).** The
+prior-session diagnosis held: the cap hole was **downstream of a TWISTED bodice armhole** (the garment
+warm-start sewed the crossed shoulder seam the geometrically-closer/WRONG direction → armhole crossed
+~137mm → a set-in cap can't close onto it → ~86mm cap gap). Fixed in THREE coordinated garment-only changes
+(print spine + calibration gate **byte-identical** — `git diff` empty over `pattern-pdf.js`/`printing.py`/
+`pattern-geom.js`/`pattern-mesh.js`/`pattern-fold.js`/`preview3d.js`/`main.py`; **bag drape byte-identical**,
+`verify-cloth` 26/26; `SIM_VERSION` 9→10):
+- **`body-form.js`** — the dress form gains real **SHOULDERS + a NECK** (shoulder band lowered yf 0.84→0.82 =
+  acromion, keeping `k` so arms socket identically; new `neck` band ≈½ bust + a `neck_top` stump → the loft's
+  flat top cap). Bands stay byte-stable (each (a,b) derives from its OWN circumference); only the resampled
+  rings shift. The renderer + collision auto-follow (no preview3d change). `yMax` now at the neck-top.
+- **`pattern-cloth.js` untwist (GATED)** — bodice↔bodice seams now use the rigid fold's **globally-consistent
+  sew direction** (`foldFlipInfo` over `PatternFold.foldDoc` transforms) instead of the per-seam geometric
+  `deriveFlipWrapped` — but **only where the fold is locally confident** (`gap < 0.5·edgeLen`) AND both sides
+  are bodice panels (`isSkirtId`/cap excluded). ⚠️ **The handoff's literal recipe (deriveFlip for ALL non-cap
+  garment seams) REGRESSES skirts/dress** (the fold frame disagrees with the body-wrap frame on open-closure
+  side seams — measured: skirt-side fold pairing ~570mm vs ~170mm wrapped); the gate is the fix.
+- **`pattern-cloth.js` honest close** — `placeGarment` drapes the bodice TOP over a z=0 **shoulder RIDGE**
+  (acromion→side-neck); the **neckline corners are left unpinned** (the free neckline pulls them apart; the
+  pin used to freeze that gap) so the hardened seam-closeup pulls front+back together; a final **per-seam
+  straggler-snap** closes a knife-edge corner ONLY on a seam already ≥70% closed (a genuinely-too-small seam
+  stays open → still warns). Honesty preserved: an oversized body / too-small garment still gaps + fires
+  `overTension` on the SIDE seams (the shoulder seam always sews — it's girth that "won't close").
+- **Result:** armhole untwist 137→**0mm**, shoulder seam closes, cap↔armhole gap 86→**15mm (no arms) / 23mm
+  (over the arm)**. Tests: `verify-body-form` 52→59 (neck/slope/acromion/arm-not-on-neck), `verify-garment-
+  drape` 61→70 (**armhole-untwist guard** — the old `shoulder<15` is BLIND to the twist; too-small honesty;
+  dress/skirt no-regression; cap-gap target). Full headless + print-spine suites green.
+- **OWNER-GATED + DEFERRED (owner chose "ship it, polish tank later"):** the **sleeveless garments**
+  (skirts/dresses/bodices = her primary use) render **clean** (no body penetration, clean symmetric top — the
+  untwist beats the old twisted top; verified by headless projection-to-PNG renders since no WebGL headless
+  was available). The **SLEEVED tank** keeps two soft-body limitations, **deferred** as separate work: (1) the
+  **sleeve-on-arm drape** — flat-ish sleeve flaps + ~16-22mm **armpit clipping** (sleeve into the arm∩torso
+  overlap; pre-existing Stage-B2, NOT introduced here), and (2) a localized **shoulder texture stretch** (~60%
+  p95 in the shoulder zone vs ~30% on the twisted baseline) — INHERENT to draping a flat unshaped pattern over
+  a 3D shoulder with the seam closed; **robust across every tuning lever** (reach/snap/pins/gap/mesh — verified
+  it's not a tunable bug). Knobs `shoulderZone` (0.25) + `ridgeSpanDeg` (70) remain for owner-gate tuning.
+  See [[sewing-sleeve-arms-insight]].
