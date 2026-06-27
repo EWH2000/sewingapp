@@ -58,6 +58,21 @@ function seamResiduals(r) {
   }
   return { shoulder, side };
 }
+// settled node nearest an authored localUV (for landmark distances).
+function nodeNearUV(r, piece, uv) {
+  const pr = r.pieceRanges.find((p) => p.piece === piece); if (!pr) return null;
+  let best = Infinity, bi = -1;
+  for (let k = 0; k < pr.count; k++) { const u = r.localUV[pr.start + k]; const d = Math.hypot(u[0] - uv[0], u[1] - uv[1]); if (d < best) { best = d; bi = pr.start + k; } }
+  return r.nodes[bi];
+}
+// the bodice armhole-TOP twist: front node3 (452,420) ↔ back node6 (38,420) on the R; mirror on the L.
+// The crossed shoulder seam, sewn the WRONG direction, lands these ~130mm apart (armhole twisted) while
+// the shoulder-seam residual still reads ~0 — so this is the guard the shoulder<15 assert can't provide.
+function armholeTwist(r, fId, bId) {
+  const D3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  return { R: D3(nodeNearUV(r, fId, [452, 420]), nodeNearUV(r, bId, [38, 420])),
+           L: D3(nodeNearUV(r, fId, [38, 420]), nodeNearUV(r, bId, [452, 420])) };
+}
 
 console.log("=== garment drapes without NaN, on the form ===");
 const r = Cl.solveDrape([front, back], seams, opts);
@@ -65,13 +80,18 @@ ok(r.nodes.length > 0 && r.tris.length > 0, `produced a mesh (${r.nodes.length} 
 ok(finite(r.nodes), "no NaN/Inf in the settled mesh");
 ok(r.mode === "settled" || r.mode === "warm", `mode is settled/warm, not degraded (${r.mode})`);
 
-console.log("=== the shoulder + side seams CLOSE (pin-fix regression) ===");
+console.log("=== the shoulder + side seams CLOSE + the armhole is UNTWISTED (M6) ===");
 const res = seamResiduals(r);
 ok(res.shoulder < 15, `shoulder seam closes (max residual ${res.shoulder.toFixed(1)}mm — was ~175mm with the pinned-band bug)`);
 ok(res.side < 15, `side seam closes (max residual ${res.side.toFixed(1)}mm)`);
-// the rollback flag reproduces the bug (pinned-band freezes the shoulder open) — proves WHAT fixed it
+// THE M6 GUARD: the bodice armhole must be an UNTWISTED loop (front/back armhole-tops together). The
+// shoulder<15 assert above is BLIND to this — the old per-seam-geometric flip closed the shoulder seam
+// while crossing the armhole ~130mm (front z≈−69 / back z≈+68). The gated fold-direction flip untwists it.
+const tw = armholeTwist(r, "bf", "bb");
+ok(tw.R < 40 && tw.L < 40, `armhole is untwisted (front↔back armhole-top R=${tw.R.toFixed(0)}mm L=${tw.L.toFixed(0)}mm — was ~137mm crossed)`);
+// the rollback flag (pin the band BEFORE the stitch-up) still regresses the shoulder vs the fix
 const rOld = Cl.solveDrape([front, back], seams, Object.assign({}, opts, { stitchUnpinned: false }));
-ok(seamResiduals(rOld).shoulder > 60, `stitchUnpinned:false regresses the shoulder (${seamResiduals(rOld).shoulder.toFixed(0)}mm) — the unpinned stitch-up is what closes it`);
+ok(seamResiduals(rOld).shoulder > res.shoulder + 40, `stitchUnpinned:false regresses the shoulder (${seamResiduals(rOld).shoulder.toFixed(0)}mm vs ${res.shoulder.toFixed(0)}mm) — the unpinned stitch-up still helps close it`);
 
 console.log("=== the fit-strain metric is present + QUIET on a fitting garment ===");
 ok(r.strain && typeof r.strain.overTension === "boolean", "strain object present on the garment result");
@@ -99,6 +119,16 @@ ok(rBig.strain.gapSegs.length > 0, "the over-tension drape carries gap-highlight
 // the stretch ceiling is a soft (Gauss–Seidel) bound: a modest misfit stays near 1.15, but a wildly
 // oversized body (here +50%) still gaps AND stretches near the gap — the point is it doesn't EXPLODE.
 ok(rBig.strain.maxStretchRatio < 4, `stretch stayed bounded — no explosion (p95 ${rBig.strain.maxStretchRatio.toFixed(2)})`);
+// honesty stress: a uniformly-too-small garment (0.7× about each panel's centroid) can't reach around the
+// body → its SIDE seams gap → it MUST still warn. This proves the M6 shoulder-close (which uses a full
+// ridge climb + a straggler snap) does NOT mask a genuine misfit — the girth channel is independent.
+{
+  const scale = (p) => { const cx = p.nodes.reduce((a, n) => a + n.x, 0) / p.nodes.length, cy = p.nodes.reduce((a, n) => a + n.y, 0) / p.nodes.length;
+    return Object.assign({}, p, { nodes: p.nodes.map((n) => ({ x: cx + (n.x - cx) * 0.7, y: cy + (n.y - cy) * 0.7 })) }); };
+  const rSmall = Cl.solveDrape([scale(front), scale(back)], seams, opts);
+  ok(finite(rSmall.nodes), "too-small drape still finite");
+  ok(rSmall.strain.overTension === true, `a too-small garment still warns (maxGap ${rSmall.strain.maxSeamGapMm.toFixed(0)}mm) — the ridge close does NOT fake it shut`);
+}
 
 console.log("=== body collision pushes an inside point out ===");
 const p0 = [0, form.bands.find((b) => b.role === "bust").y, 0];   // dead centre at bust height
@@ -153,6 +183,32 @@ console.log("=== a skirt (top-pinned, hem free) still drapes finite — unpinned
   ok(rs.mode !== "degraded", `skirt not degraded (${rs.mode})`);
   const sy = rs.nodes.map((p) => p[1]);
   ok(Math.min(...sy) < form.bands.find((b) => b.role === "waist").y, "skirt hangs below the waist");
+  // M6 NO-REGRESSION: the gated fold-flip EXCLUDES skirt seams (they keep the wrapped direction), so the
+  // skirt side seams must still close — confirm the untwist change didn't break the skirt.
+  ok(seamResiduals(rs).side < 20, `skirt side seams still close (${seamResiduals(rs).side.toFixed(1)}mm) — the fold-flip gate spares skirts`);
+}
+
+console.log("=== M6 NO-REGRESSION: a DRESS (bodice+skirt) — armhole untwisted, all seams close ===");
+{
+  const dbod = (id, role, nd) => ({ id, name: id, count: 1, seamMm: 12, closed: true, place3d: { role },
+    nodes: [N(50, 0), N(440, 0), N(490, 230), N(452, 420), N(311, 400), N(179, 400), N(38, 420), N(0, 230)],
+    edges: { "2": curve([0.5, 0.16]), "4": curve([0.5, nd]), "6": curve([0.5, 0.16]) } });
+  const dskirt = (id, role) => ({ id, name: role, count: 1, seamMm: 12, closed: true, place3d: { role },
+    nodes: [N(0, 0), N(490, 0), N(575, 560), N(-85, 560)] });
+  const df = dbod("df", "front", 0.28), db = dbod("db", "back", 0.10), dsf = dskirt("dsf", "front-skirt"), dsb = dskirt("dsb", "back-skirt");
+  const dseams = [
+    { a: { piece: "df", edge: 3 }, b: { piece: "db", edge: 5 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] },
+    { a: { piece: "df", edge: 5 }, b: { piece: "db", edge: 3 }, anchors: [{ ta: 0, tb: 1 }, { ta: 1, tb: 0 }] },
+    { a: { piece: "df", edge: 1 }, b: { piece: "db", edge: 7 } }, { a: { piece: "df", edge: 7 }, b: { piece: "db", edge: 1 } },
+    { a: { piece: "df", edge: 0 }, b: { piece: "dsf", edge: 0 } }, { a: { piece: "db", edge: 0 }, b: { piece: "dsb", edge: 0 } },
+    { a: { piece: "dsf", edge: 1 }, b: { piece: "dsb", edge: 3 } }, { a: { piece: "dsf", edge: 3 }, b: { piece: "dsb", edge: 1 } },
+  ];
+  const rd = Cl.solveDrape([df, db, dsf, dsb], dseams, opts);
+  ok(finite(rd.nodes) && rd.mode !== "degraded", `dress drapes finite, not degraded (${rd.mode})`);
+  const dtw = armholeTwist(rd, "df", "db");
+  ok(dtw.R < 40 && dtw.L < 40, `dress bodice armhole untwisted (R=${dtw.R.toFixed(0)}mm L=${dtw.L.toFixed(0)}mm)`);
+  ok(seamResiduals(rd).shoulder < 15, `dress shoulder seams close (${seamResiduals(rd).shoulder.toFixed(1)}mm)`);
+  ok(rd.strain.overTension === false, "a fitting dress does NOT warn");
 }
 
 console.log("=== degrade-never-blank (garment, no seams → loose panels still drape) ===");
@@ -226,8 +282,9 @@ console.log("=== surface smoothing (de-jag) lowers roughness, keeps seams closed
 }
 
 console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice intact, tube closes, no penetration ===");
-// NB: the cap↔armhole closure is the OPEN problem (a cluster near the shoulder gaps ~100mm — see
-// HANDOFF-sleeve-3d.md; the fix is Stage B2 arms). This test locks the rest so arm work can't regress it.
+// M6 (2026-06-25): the cap↔armhole closure — formerly the OPEN problem (~100mm gap at the shoulder) — is
+// now closed by UNTWISTING the bodice armhole (gated fold-flip + over-the-shoulder ridge drape). The cap
+// drops to ~15mm (no arms) / ~23mm (over the arm). This test locks the bodice + tube + cap closure.
 {
   const G = global.window.PatternGeom;
   const fArm = G.bodiceArmholes(front), bArm = G.bodiceArmholes(back);
@@ -275,8 +332,11 @@ console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice 
   };
   const capArms = capOf(rs);                                                  // arms derived ON (sleeve present)
   const capNoArms = capOf(Cl.solveDrape(pcs, sm, Object.assign({}, opts, { arms: false })));
-  ok(capArms <= capNoArms + 6, `arms don't worsen the cap↔armhole gap (arms ${capArms.toFixed(0)}mm ≤ no-arms ${capNoArms.toFixed(0)}mm)`);
-  console.log(`   (Stage B2: cap↔armhole gap ${capNoArms.toFixed(0)}mm → ${capArms.toFixed(0)}mm with arms)`);
+  // M6: untwisting the armhole drops the cap↔armhole gap from ~86mm to ~15mm (no arms) / ~23mm (arms) —
+  // the cap can finally close onto a CLEAN armhole loop. The arm adds a small outboard pull; bounded here.
+  ok(capNoArms < 25, `M6: the untwisted armhole nearly closes the cap↔armhole gap (no-arms ${capNoArms.toFixed(0)}mm — was ~86mm twisted)`);
+  ok(capArms < 32, `the cap stays nearly closed over the arm (arms ${capArms.toFixed(0)}mm)`);
+  console.log(`   (M6: cap↔armhole gap ${capNoArms.toFixed(0)}mm → ${capArms.toFixed(0)}mm with arms — was ~86mm before the untwist)`);
   const formArmed = BF.loft(body, { arms: true });
   ok(formArmed.arms && formArmed.arms.length === 2, "the solver lofts two arms for the sleeved garment");
   const armR = formArmed.arms.find((a) => a.side === "R");

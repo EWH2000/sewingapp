@@ -29,7 +29,11 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 9;   // 9: sleeve cap de-crumpled — GRADUAL armhole→arm blend over the whole sleeve (a short
+  const SIM_VERSION = 10;  // 10: bodice assembles over real SHOULDERS+neck — fold-direction untwist for bodice↔bodice
+                           //     seams (gated; skirt/cap unaffected) + over-the-shoulder ridge drape (neckline corners
+                           //     left unpinned) + honest per-seam straggler snap → the shoulder seam closes on a real
+                           //     surface (girth misfit still gaps+warns on the side seams). Form gains a neck band.
+                           // 9: sleeve cap de-crumpled — GRADUAL armhole→arm blend over the whole sleeve (a short
                            //    blend forced a horizontal arm-ring under the shoulder, where the armhole is a vertical
                            //    slit → it buckled) + the cap INTERIOR tethers smooth (cap EDGE stays free to weld)
                            // 8: sleeve WRAPS the arm — mirror-safe tube warm-start (eSide forced +z, no handedness
@@ -122,6 +126,14 @@
     const DEG = Math.PI / 180, skin = (opts && opts.skin) || 8, gap = (opts && opts.wrapGap) || 20;
     const bandY = {}; for (const bd of form.bands) bandY[bd.role] = bd.y;
     const shoulderY = bandY.shoulder, waistY = bandY.waist;
+    // M6/bodice assembly: the form now has a NECK band above the shoulder (body-form.js), so the
+    // bodice TOP can drape over a real shoulder SURFACE instead of a flat ring — which is what lets
+    // the (now untwisted, fold-flip) shoulder seam close HONESTLY. SHZ = the top fraction of the
+    // bodice that climbs the shoulder ridge; vSh = where the body zone ends and the climb begins.
+    const neckY = bandY.neck, hasNeck = neckY != null;
+    const SHZ = (opts && opts.shoulderZone) || 0.25;
+    const vSh = 1 - SHZ;
+    const ridgeSpanDeg = (opts && opts.ridgeSpanDeg) || 70;
     // front/back sectors MEET at the sides (±90°) so a front↔back side seam's endpoints start
     // coincident on the body's widest point (a small warm-start gap there never closes against the body).
     const FRONT = [-90 * DEG, 90 * DEG], BACK = [90 * DEG, 270 * DEG], SIDE_R = [40 * DEG, 140 * DEG], SIDE_L = [220 * DEG, 320 * DEG];
@@ -144,12 +156,35 @@
       if (/side/.test(role)) sector = /left|_l|-l/.test(role) ? SIDE_L : SIDE_R;
       const yHi = isSkirt ? waistY : shoulderY;
       const yLo = isSkirt ? waistY - by.H : waistY;        // skirt hangs from the waist by its own height
+      // The z=0 shoulder RIDGE: a curve on the form surface from the acromion (shoulder band, at the
+      // side th≈±90°) sloping IN and UP to the side-base-of-neck (neck band) as th moves toward the
+      // front/back centre. BOTH front and back drape their shoulder edge onto THIS shared ridge — so
+      // the crossed shoulder seam closes over a REAL surface (front +z & back −z both pulled to z=0)
+      // instead of twisting the armhole or springing the neckline open. Symmetric in sigma (±x side)
+      // and phi (angular distance from the side plane), so corresponding front/back seam nodes map to
+      // the SAME ridge point → they coincide for a fitting garment.
+      const ridgeAt = (th) => {
+        const sigma = Math.sin(th) >= 0 ? 1 : -1;                        // +x (R) / −x (L) shoulder
+        const rS = ringAt(shoulderY), rN = ringAt(neckY);
+        const phi = Math.abs(th - sigma * (Math.PI / 2));                // angular dist from the side plane
+        const t = Math.min(1, phi / (ridgeSpanDeg * DEG));              // 0 = acromion … 1 = side-neck
+        return [sigma * lerp(rS.a + skin, rN.a + skin, t), lerp(shoulderY, neckY, t), 0];
+      };
       const wrap = (lx, ly) => {
         const u = (lx - bx.lo) / bx.W, v = (ly - by.lo) / by.H;
         const th = sector[0] + u * (sector[1] - sector[0]);
         const wy = yLo + v * (yHi - yLo);
         const r = ringAt(wy);
-        return [(r.a + skin + gap) * Math.sin(th), wy, (r.b + skin + gap) * Math.cos(th)];
+        const base = [(r.a + skin + gap) * Math.sin(th), wy, (r.b + skin + gap) * Math.cos(th)];
+        if (isSkirt || !hasNeck || v <= vSh) return base;                // body zone = old wrap (byte-identical)
+        const Rdg = ridgeAt(th);
+        // Climb FULLY to the ridge so the shoulder seam closes over a real surface. The shoulder seam always
+        // sews (front edge ↔ back edge, equal length) regardless of body size, so closing it is correct —
+        // it's the GIRTH that can fail to reach around, which gaps honestly on the SIDE seams.
+        const sv = smoothstep((v - vSh) / (1 - vSh));
+        return [base[0] + sv * (Rdg[0] - base[0]),
+                base[1] + sv * (Rdg[1] - base[1]),
+                base[2] + sv * (Rdg[2] - base[2])];
       };
       // A skirt hangs from its waist (top pinned, hem free). A bodice is FITTED shoulder-to-waist:
       // anchor the waist too so it doesn't droop to the wider hip (which would split the side seam) —
@@ -164,12 +199,27 @@
         const x0 = a.x + Math.max(0, d.center - hw) * (b.x - a.x), x1 = a.x + Math.min(1, d.center + hw) * (b.x - a.x);
         dartFreeU.push([(Math.min(x0, x1) - bx.lo) / bx.W, (Math.max(x0, x1) - bx.lo) / bx.W]);
       }
+      // The NECKLINE is the FREE top edge(s) (not in any seam). Its corner nodes are shoulder-seam
+      // endpoints that the free neckline pulls toward each panel — so DON'T pin them (pinning freezes
+      // that gap; left free, the hardened seam closeup pulls the front+back corners together). Pin only
+      // the SEWN shoulder line (it drapes over the shoulder ridge + supports the bodice). Derive the
+      // neckline u-span from the seams so it's robust for hand-drawn bodices, not a hard-coded range.
+      const sewnEdge = new Set();
+      for (const s of (seams || [])) { if (s.a.piece === p.id) sewnEdge.add(s.a.edge); if (s.b.piece === p.id) sewnEdge.add(s.b.edge); }
+      const freeTopU = [];
+      for (let e = 0; e < nodes.length; e++) {
+        if (sewnEdge.has(e)) continue;
+        const na = nodes[e], nb = nodes[(e + 1) % nodes.length];
+        if ((na.y - by.lo) / by.H < 0.85 || (nb.y - by.lo) / by.H < 0.85) continue;   // a TOP free edge
+        const ua = (na.x - bx.lo) / bx.W, ub = (nb.x - bx.lo) / bx.W;
+        freeTopU.push([Math.min(ua, ub), Math.max(ua, ub)]);
+      }
       const pinTest = isSkirt
         ? (lx, ly) => (ly - by.lo) / by.H >= 0.92
         : (lx, ly) => {
             const v = (ly - by.lo) / by.H;
-            if (v >= 0.92) return true;                                  // shoulder line
             const u = (lx - bx.lo) / bx.W;
+            if (v >= 0.92) return !freeTopU.some(([a, b]) => u >= a && u <= b);  // pin shoulder line, NOT the free neckline
             return v <= 0.08 && !dartFreeU.some(([a, b]) => u >= a && u <= b);   // waist, except a dart mouth
           };
       place[p.id] = { wrap, pinTest, role };
@@ -374,6 +424,7 @@
     // shoulder open; also NOT in the strain gate (their residual IS the intended ease). welds: darts.
     const seamLinks = [], kI = [], kJ = [], kSeam = [], kIc = [], kJc = [], weldI = [], weldJ = [];
     const isSleeveId = (pid) => { const gp = gplace && gplace[pid]; if (gp && gp.role) return gp.role === "sleeve"; const p = byId[pid]; return !!(p && p.place3d && p.place3d.role === "sleeve"); };
+    const isSkirtId = (pid) => { const gp = gplace && gplace[pid]; if (gp && gp.role) return /skirt/.test(gp.role); const p = byId[pid]; return !!(p && (/skirt/.test((p.name || "").toLowerCase()) || (p.place3d && /skirt/.test(p.place3d.role || "")))); };
     for (const s of seams) {
       // A same-piece seam that joins TWO DIFFERENT edges (the sleeve underarm) sews as a normal SPRING
       // via seamPairs below — ma===mb, distinct boundary nodes. Wedge darts are NOT in seams[] (they
@@ -383,14 +434,27 @@
       if (!ma || !mb) continue;                                       // strap seam, or a dropped piece
       const TA = transforms[s.a.piece], TB = transforms[s.b.piece];
       const A = byId[s.a.piece], B = byId[s.b.piece];
-      const flip = garment
-        ? deriveFlipWrapped(gplace[s.a.piece], A, s.a.edge, gplace[s.b.piece], B, s.b.edge)
-        : deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
-      const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
       // A CAP seam (sleeve ↔ bodice, exactly one side a sleeve) is phased + out of the strain gate —
       // keyed on sleeve-involvement, NOT on ease, so even a 0-ease cap (the owner's relaxed style) is
       // held out of the unpinned stitch-up. The underarm self-seam (sleeve↔sleeve) stays structural.
       const capSeam = garment && (isSleeveId(s.a.piece) !== isSleeveId(s.b.piece));
+      // Untwist the CROSSED bodice shoulder seam with the rigid fold's globally-consistent sew
+      // direction — but ONLY where that direction is in the right frame: both sides BODICE panels
+      // (skirt/cap excluded) AND the fold lays the seam edges adjacent (small fold-layout pair gap).
+      // The fold frame DISAGREES with the body wrap on open-closure SIDE seams (measured: skirt-side
+      // fold pairing ~570mm vs ~170mm wrapped; a dress bodice-side flips just by attaching a skirt),
+      // so trust the fold only when confident; everywhere else keep the wrapped direction (which
+      // already closes those seams). bothBodice + (foldGap < 0.5·edgeLen) is the measured-clean gate.
+      const bothBodice = garment && !capSeam && !isSkirtId(s.a.piece) && !isSkirtId(s.b.piece);
+      let flip;
+      if (!garment) {
+        flip = deriveFlip(A, TA, s.a.edge, B, TB, s.b.edge);
+      } else {
+        const wf = deriveFlipWrapped(gplace[s.a.piece], A, s.a.edge, gplace[s.b.piece], B, s.b.edge);
+        const fi = (bothBodice && TA && TB) ? foldFlipInfo(A, TA, s.a.edge, B, TB, s.b.edge) : null;
+        flip = (fi && fi.gap < 0.5 * fi.elen) ? fi.flip : wf;   // trust the fold only when locally confident
+      }
+      const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
       for (const pr of pairs) {
         const gi = ma.start + pr[0], gj = mb.start + pr[1];
         if (capSeam) { kIc.push(gi); kJc.push(gj); }
@@ -876,6 +940,26 @@
         for (let s = 0; s < snap.length; s += 2) { const oi = 3 * snap[s], oj = 3 * snap[s + 1]; const mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2; X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; }
         if (collideOn) bodyProject();
       }
+      // Honest per-seam STRAGGLER snap: a bodice shoulder seam can leave ONE corner pair (the neckline
+      // corner the free edge pulled) as a bistable knife-edge straggler while the rest of the seam closed
+      // (front+back are symmetric, but Gauss–Seidel order tips one side). If a seam is MOSTLY closed
+      // (≥70% of its pairs within the snap threshold), snap its remaining near-stragglers to the pair
+      // midpoint — closing the corner. A genuinely-too-small seam (most pairs far) is NOT mostly closed
+      // → left untouched → it still gaps + drives overTension (honest). Capped so a large local defect
+      // on an otherwise-closed seam isn't hidden. Body-reproject after so nothing snaps into the form.
+      if (nK) {
+        const snapMm = smoothSnapMm, capMm = 90, gapOf = (k) => Math.hypot(X[3 * kI[k]] - X[3 * kJ[k]], X[3 * kI[k] + 1] - X[3 * kJ[k] + 1], X[3 * kI[k] + 2] - X[3 * kJ[k] + 2]);
+        const bySeam = {}; for (let k = 0; k < nK; k++) { const id = kSeam[k] || "?"; (bySeam[id] || (bySeam[id] = [])).push(k); }
+        let snapped = false;
+        for (const id in bySeam) {
+          const ks = bySeam[id]; let closed = 0; for (const k of ks) if (gapOf(k) < snapMm) closed++;
+          if (closed / ks.length < 0.7) continue;                         // a genuinely-open seam → leave it (warns)
+          for (const k of ks) { const g = gapOf(k); if (g < snapMm || g > capMm) continue;
+            const oi = 3 * kI[k], oj = 3 * kJ[k], mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
+            X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; snapped = true; }
+        }
+        if (snapped && collideOn) bodyProject();
+      }
       const strain = computeStrain();
       for (let j = 0; j < pins.length; j++) invm[pins[j]] = savedInvm[j];
       const gnodes = [];
@@ -945,6 +1029,20 @@
     const ht = Math.max(dist3(A0, B1), dist3(A1, B0));   // head-to-tail
     const hh = Math.max(dist3(A0, B0), dist3(A1, B1));   // head-to-head
     return hh < ht;
+  }
+
+  // Like deriveFlip, but also returns the CHOSEN pairing's gap + the edge length, so the garment
+  // path can trust the fold direction only where the fold lays the seam edges ADJACENT (gap ≪
+  // edgeLen). Used to gate the bodice-shoulder untwist (the fold frame is unreliable for the
+  // open-closure side seams, which it lays far apart).
+  function foldFlipInfo(A, TA, ea, B, TB, eb) {
+    if (!A || !B || !TA || !TB) return null;
+    const nA = A.nodes.length, nB = B.nodes.length;
+    const A0 = applyT(TA, nodeXY(A, ea)), A1 = applyT(TA, nodeXY(A, (ea + 1) % nA));
+    const B0 = applyT(TB, nodeXY(B, eb)), B1 = applyT(TB, nodeXY(B, (eb + 1) % nB));
+    const ht = Math.max(dist3(A0, B1), dist3(A1, B0));
+    const hh = Math.max(dist3(A0, B0), dist3(A1, B1));
+    return { flip: hh < ht, gap: Math.min(ht, hh), elen: dist3(A0, A1) };
   }
 
   // ── geomHash (Phase-2 settled-drape cache key; pure, used on both write + validate) ──

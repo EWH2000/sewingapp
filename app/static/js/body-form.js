@@ -60,7 +60,9 @@
     { yf: 0.68, role: "underbust", meas: "waistMm", k: 1.06 },
     { yf: 0.73, role: "bust",      meas: "bustMm",  k: 1.00 },  // bust peak
     { yf: 0.79, role: "chest",     meas: "bustMm",  k: 0.86 },  // above-bust, narrows
-    { yf: 0.84, role: "shoulder",  meas: "bustMm",  k: 0.80 },  // shoulder (acromion); no neck/arms
+    { yf: 0.82, role: "shoulder",  meas: "bustMm",  k: 0.80 },  // acromion (LOWERED 0.84→0.82 → a real ~66mm slope, not a 57° wall); arms socket HERE
+    { yf: 0.86, role: "neck",      meas: "bustMm",  k: 0.50 },  // base of neck (cervicale) ≈ ½ bust — the neckline ring the bodice top drapes around
+    { yf: 0.89, role: "neck_top",  meas: "bustMm",  k: 0.47 },  // short neck stump → the flat render cap (a believable neck nub, not a head)
   ];
 
   // Ramanujan's first ellipse-perimeter approximation, factored for fixed aspect r = b/a:
@@ -115,7 +117,7 @@
       return { y: band.yf * H, a: semiAxesForCirc(C, aspect).a, role: band.role };
     });
     const bands = anchors.map((an) => ({ y: an.y, role: an.role, a: an.a, b: aspect * an.a }));
-    // resample to a smooth stack of `rings` slices (default 48) from hem to shoulder.
+    // resample to a smooth stack of `rings` slices (default 48) from hem to neck-top.
     const nRings = Math.max(8, opts.rings || 48);
     const rings = [];
     for (let i = 0; i < nRings; i++) {

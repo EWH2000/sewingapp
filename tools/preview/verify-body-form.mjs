@@ -72,8 +72,16 @@ ok(approx(BF.bandCircumferences(Sw).find((c) => c.role === "bust").circ, 920, 1)
 
 console.log("=== form floats at anatomical height (room for a skirt below the waist) ===");
 ok(S.yMin > 0.35 * D.heightMm && S.yMin < 0.5 * D.heightMm, `hem floats at ~0.42·height (${S.yMin.toFixed(0)}mm)`);
-ok(S.yMax > 0.8 * D.heightMm && S.yMax < 0.88 * D.heightMm, `shoulder at ~0.84·height (${S.yMax.toFixed(0)}mm)`);
+ok(S.yMax > 0.86 * D.heightMm && S.yMax < 0.91 * D.heightMm, `yMax now at the neck-top (~0.89·height) (${S.yMax.toFixed(0)}mm)`);
 ok(band("waist").y < band("bust").y && band("hip").y < band("waist").y, "hip < waist < bust in height (anatomical order)");
+
+console.log("=== M6: the form has real SHOULDERS + a NECK (so a bodice top can drape over a surface) ===");
+ok(band("shoulder").y > 0.80 * D.heightMm && band("shoulder").y < 0.84 * D.heightMm, `shoulder (acromion) at ~0.82·height (${band("shoulder").y.toFixed(0)}mm)`);
+ok(band("neck") && band("neck").y > band("shoulder").y, "a neck band sits ABOVE the shoulder");
+ok(approx(BF.bandCircumferences(S).find((c) => c.role === "neck").circ, 0.5 * D.bustMm, 1), `neck band ≈ ½ bust (${BF.bandCircumferences(S).find((c) => c.role === "neck").circ.toFixed(0)}mm)`);
+ok(approx(S.yMax, band("neck_top").y, 1e-6) && band("neck_top").y > band("neck").y, "yMax is the neck-top, above the neck");
+{ let mono = true, prev = Infinity; for (let i = 0; i <= 20; i++) { const y = band("shoulder").y + (band("neck").y - band("shoulder").y) * i / 20; const a = BF.ringAt(S, y).a; if (a > prev + 1e-9) mono = false; prev = a; } ok(mono, "the shoulder→neck slope tapers monotonically (no spike)"); }
+ok(band("bust").a > band("shoulder").a && band("shoulder").a > band("neck").a, "bust > shoulder > neck in width (the slope narrows up)");
 
 console.log("=== no overshoot, all rings sane, determinism ===");
 let bad = 0; for (let i = 0; i <= 100; i++) { const rr = BF.ringAt(S, S.yMin + ((S.yMax - S.yMin) * i) / 100); if (!(rr.a > 0 && rr.b > 0) || rr.b / rr.a < 0.5 || rr.b / rr.a > 0.95) bad++; }
@@ -87,6 +95,7 @@ ok(Array.isArray(SA.arms) && SA.arms.length === 2, "two arms when requested");
 const AR = SA.arms.find((a) => a.side === "R"), AL = SA.arms.find((a) => a.side === "L");
 ok(AR && AL && AR.p0[0] > 0 && AL.p0[0] < 0, "R arm on +x, L arm on −x");
 ok(AR.p1[1] < AR.p0[1], "arm hangs DOWN (wrist below the socket)");
+ok(AR.p0[1] < band("neck").y && approx(AR.p0[1], band("shoulder").y - 0.02 * D.heightMm, 1e-6), "arm sockets at the SHOULDER band, not the neck (M6: shoulder is no longer the top)");
 ok(AR.r0 > AR.r1, "arm tapers bicep → wrist");
 const rawBicepR = (D.bustMm * 0.32) / (2 * Math.PI);                          // ≈47mm before sleeve ease
 ok(AR.r0 > 0.7 * rawBicepR && AR.r0 < rawBicepR, `r0 ≈ bicep/2π, thinner by sleeve ease (${AR.r0.toFixed(1)}mm vs raw ${rawBicepR.toFixed(1)})`);
