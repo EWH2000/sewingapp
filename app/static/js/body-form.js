@@ -35,9 +35,13 @@
     bicepFromBust: 0.32,   // bicep circumference ≈ 0.32·bust  [GATE]
     wristFromBicep: 0.58,  // wrist circumference ≈ 0.58·bicep [GATE]
     lenFrac: 0.42,         // arm length as a fraction of stature (to the wrist) [GATE]
-    downDeg: 12,           // axis tilt off vertical (down-and-out). 12° drapes CONSISTENTLY across
-                           // garments (both sleeves wrap with only a mild front/back offset) and keeps
-                           // the arm∩torso overlap shallow (low armpit penetration). [GATE]
+    downDeg: 20,           // axis tilt off vertical (down-and-out). 20° (was 12) abducts the free shaft
+                           // CLEAR of the torso below the socket: at 12° the arm's inner wall overlapped
+                           // the torso wall ~14mm for ~140mm of height, so the sleeve underarm had to
+                           // bridge armhole→around-the-arm through solid geometry — an unclosable ~35%
+                           // stretch bind that tore the underarm seam open (and clipped 17-21mm). At 18°
+                           // the wedge clears for the default body (measured); 20 adds margin across
+                           // body sizes. Only the anatomical shoulder joint still overlaps. [GATE]
     socketOut: 0.85,       // socket sits r0·0.85 beyond the shoulder side — close enough to FILL the
                            // sleeve (the owner's goal), far enough that the torso∩arm overlap stays
                            // shallow (the armpit residual is a soft-body limit, kept ≲ test bound). [GATE]
@@ -282,6 +286,135 @@
     return d;
   }
 
+  // ── smooth-union (fillet) collision field (M6 armpit fix) ─────────────────────────
+  // The hard union min(dTorso, dArm) has a CONCAVE crease where the arm meets the torso: a
+  // node in the wedge has no projection exit (out of the arm lands inside the torso and vice
+  // versa — the measured 17–21mm armpit clipping). Real fabric BRIDGES a concave crease
+  // (bending stiffness), so the garment solver collides against a smooth union instead: the
+  // quadratic polynomial smin, whose d=0 isosurface lies ON or OUTSIDE the true union (a
+  // fillet collar, bulge ≤ k/4) — cloth resting on it can never be inside the REAL form, so
+  // the honest penetration metric (signedDist, true union — unchanged below) only improves.
+  // Only the garment solver calls these (and only when arms exist): sleeveless + bag paths
+  // never reach them, and nothing existing here changed.
+  //
+  // smin2(a, b, k) → {d, h}: h is the weight of `a` (h→1 where a dominates the min); for the
+  // quadratic smin the field gradient is EXACTLY the convex blend h·∇a + (1−h)·∇b (the
+  // (a−b) − k(1−2h) bracket vanishes identically), so no finite differences are needed.
+  function smin2(a, b, k) {
+    const h = Math.min(1, Math.max(0, 0.5 + (0.5 * (b - a)) / k));
+    return { d: b + (a - b) * h - k * h * (1 - h), h };
+  }
+  // outward unit gradient of signedDistTorso (horizontal ellipse normal; vertical outside the
+  // y-range so a below-hem/above-top query pushes away vertically, not sideways).
+  function torsoGrad(stack, p) {
+    const y = p[1];
+    if (y < stack.yMin || y > stack.yMax) return [0, y < stack.yMin ? -1 : 1, 0];
+    const r = ringAt(stack, y);
+    let nx = (p[0] - r.cx) / (r.a * r.a), nz = (p[2] - r.cz) / (r.b * r.b);
+    const nl = Math.hypot(nx, nz);
+    if (nl < 1e-12) return [1, 0, 0];
+    return [nx / nl, 0, nz / nl];
+  }
+  // smooth-union signed distance + its (blended, un-normalized-by-design) gradient + hT, the
+  // residual torso weight (1 = pure torso … 0 = pure arm) used to blend per-shape skins.
+  function smoothField(stack, p, k) {
+    let d = signedDistTorso(stack, p), g = torsoGrad(stack, p), hT = 1;
+    if (stack.arms) {
+      for (const arm of stack.arms) {                       // fixed array order (R, L) → deterministic
+        const f = capsuleFoot(arm, p);
+        let gC;
+        if (f.rad < 1e-9) {                                 // on-axis: any perpendicular (stable pick)
+          gC = torsoGrad(stack, p);
+        } else gC = [f.rx / f.rad, f.ry / f.rad, f.rz / f.rad];
+        const dC = f.rad - f.R;
+        const m = smin2(dC, d, k);                          // m.h weights the ARM term
+        g = [m.h * gC[0] + (1 - m.h) * g[0], m.h * gC[1] + (1 - m.h) * g[1], m.h * gC[2] + (1 - m.h) * g[2]];
+        hT *= 1 - m.h;
+        d = m.d;
+      }
+    }
+    return { d, g, hT };
+  }
+  // project p onto the smooth-union level set d = τ, where τ blends the torso skin (skinT)
+  // and the arm skin (skinA) by hT. Two stages, both deterministic:
+  //  1. SAFEGUARDED Newton on the C¹ field (fixed iters; a step that fails to raise d is
+  //     halved, and never accepted worse — the crease saddle otherwise flings points DEEPER).
+  //  2. If Newton stalls below the level (deep in the arm∩torso overlap band, where the two
+  //     walls fully overlap and the only exits are along the crease), march along the CREASE
+  //     TANGENT (torsoGrad × armGrad — the direction tangent to BOTH walls, i.e. toward the
+  //     front/back armpit folds where real fabric bunches) with a bisection to the level,
+  //     plus the arm's outer side as a fallback candidate; take the nearest valid exit.
+  // maxStepMm (optional) caps the TOTAL displacement per call: the crease escape otherwise
+  // teleports a node ~40–50mm to its nearest fold exit, and a sewn PAIR straddling the crease
+  // watershed (z≈0) gets flung to OPPOSITE folds and locked ~90mm apart — bounded steps let the
+  // seam springs win the tug-of-war so both halves converge to one side across substeps.
+  // noEscape: Newton-only (skip the crease escape) — for SEAM-member nodes, whose pair partner
+  // may sit across the crease watershed; the escape would tear the pair to opposite folds, while
+  // Newton keeps both halves moving coherently (they tuck INTO the crease together — hidden, and
+  // physically how pinched armpit fabric behaves).
+  function smoothSurface(stack, p, k, skinT, skinA, maxStepMm, noEscape) {
+    const level = (f) => f.hT * skinT + (1 - f.hT) * skinA;
+    let q = [p[0], p[1], p[2]];
+    let f = smoothField(stack, q, k);
+    for (let it = 0; it < 6 && f.d - level(f) < -0.25; it++) {
+      const g2 = Math.max(0.25, f.g[0] * f.g[0] + f.g[1] * f.g[1] + f.g[2] * f.g[2]);
+      let s = Math.min((level(f) - f.d) / g2, 2 * k);
+      let accepted = null;
+      for (let hv = 0; hv < 4; hv++) {                      // halve until the field improves
+        const c = [q[0] + s * f.g[0], q[1] + s * f.g[1], q[2] + s * f.g[2]];
+        const fc = smoothField(stack, c, k);
+        if (fc.d > f.d + 1e-9) { accepted = { c, fc }; break; }
+        s *= 0.5;
+      }
+      if (!accepted) break;                                 // saddle: Newton can't improve
+      q = accepted.c; f = accepted.fc;
+    }
+    if (!noEscape && f.d - level(f) < -0.5 && stack.arms && stack.arms.length) {
+      // crease escape. Nearest arm by capsule distance at the ORIGINAL point.
+      let arm = stack.arms[0], best = Infinity;
+      for (const a of stack.arms) { const d = signedDistCapsule(a, p); if (d < best) { best = d; arm = a; } }
+      const gT = torsoGrad(stack, p), fp = capsuleFoot(arm, p);
+      const gC = fp.rad > 1e-9 ? [fp.rx / fp.rad, fp.ry / fp.rad, fp.rz / fp.rad] : [0, 1, 0];
+      let tx = gT[1] * gC[2] - gT[2] * gC[1], ty = gT[2] * gC[0] - gT[0] * gC[2], tz = gT[0] * gC[1] - gT[1] * gC[0];
+      const tl = Math.hypot(tx, ty, tz);
+      const cands = [];
+      // Every candidate direction must raise d MONOTONICALLY from p (the caller may take the
+      // move in bounded per-substep steps — a target whose straight path dips through a shape,
+      // like the arm's far side, would have those steps shove fabric INTO the solid).
+      const march = (dx, dy, dz) => {
+        const at = (s) => [p[0] + s * dx, p[1] + s * dy, p[2] + s * dz];
+        const ok = (s) => { const ff = smoothField(stack, at(s), k); return ff.d - level(ff) >= 0; };
+        const RANGE = 140;                                  // the deepest exit (socket joint, straight down) is ~125mm
+        if (!ok(RANGE)) return;                             // no exit within range this way
+        let lo = 0, hi = RANGE;
+        for (let b = 0; b < 12; b++) { const mid = (lo + hi) / 2; if (ok(mid)) hi = mid; else lo = mid; }
+        cands.push({ point: at(hi), move: hi });
+      };
+      if (tl > 0.2) {                                       // along the crease, both ways (the ±z armpit folds)
+        march(tx / tl, ty / tl, tz / tl);
+        march(-tx / tl, -ty / tl, -tz / tl);
+      }
+      march(0, -1, 0);                                      // straight down — out under the wedge bottom
+      march(0, 1, 0);                                       // straight up — out over the shoulder top (a point
+                                                            // deep in the socket JOINT has no down/tangent exit:
+                                                            // the torso widens below and the crease is degenerate)
+      let pick = null;
+      for (const c of cands) if (!pick || c.move < pick.move) pick = c;
+      if (pick) { q = pick.point; f = smoothField(stack, q, k); }
+    }
+    if (maxStepMm > 0) {
+      const dx = q[0] - p[0], dy = q[1] - p[1], dz = q[2] - p[2];
+      const mv = Math.hypot(dx, dy, dz);
+      if (mv > maxStepMm) {
+        const s = maxStepMm / mv;
+        q = [p[0] + dx * s, p[1] + dy * s, p[2] + dz * s];
+        f = smoothField(stack, q, k);
+      }
+    }
+    const gl = Math.hypot(f.g[0], f.g[1], f.g[2]) || 1;
+    return { point: q, normal: [f.g[0] / gl, f.g[1] / gl, f.g[2] / gl], pushed: true };
+  }
+
   // per-anchor-band circumference (Ramanujan-forward) — the test asserts these == the
   // measurements for k=1 bands (bust/waist/hip).
   function bandCircumferences(stack) {
@@ -293,5 +426,6 @@
     DEFAULT_BODY, ASPECT, PROFILE,
     ellipseK, semiAxesForCirc,
     loft, ringAt, insideForm, nearestSurface, signedDist, bandCircumferences,
+    smoothField, smoothSurface,
   };
 })();

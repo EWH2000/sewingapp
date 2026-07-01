@@ -29,7 +29,17 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 10;  // 10: bodice assembles over real SHOULDERS+neck — fold-direction untwist for bodice↔bodice
+  const SIM_VERSION = 11;  // 11: armhole polish — (A) the sleeve's circumference budget is honest: arm collision skin
+                           //     2mm (was 6 — which ate the 8% sleeve ease: 2π·6 ≈ 38mm of circumference) + the tube
+                           //     warm-start wraps at the FABRIC's own radius (max(flatW/2π, armCollR+1) — was arm+12,
+                           //     +18% pre-strain), so the sleeve drapes with slack instead of skin-tight; (B) garment
+                           //     collision vs arms uses a SMOOTH-UNION fillet field (BodyForm.smoothField/smoothSurface,
+                           //     k=25) so fabric BRIDGES the concave armpit crease instead of being trapped inside it
+                           //     (the 17–21mm clipping); arm-hug tether targets are projected onto that field too (the
+                           //     old in-wedge targets were the tug-of-war holding cloth ~16mm deep); (C) the EASED cap
+                           //     pairs join the final Taubin bridge/snap + straggler snap under the same honesty gates
+                           //     (≤ snapMm, ≥70% closed) — the armhole join line irons flat like every other seam.
+                           // 10: bodice assembles over real SHOULDERS+neck — fold-direction untwist for bodice↔bodice
                            //     seams (gated; skirt/cap unaffected) + over-the-shoulder ridge drape (neckline corners
                            //     left unpinned) + honest per-seam straggler snap → the shoulder seam closes on a real
                            //     surface (girth misfit still gaps+warns on the side seams). Form gains a neck band.
@@ -269,7 +279,13 @@
         let eSide = [dir[1] * eTop[2] - dir[2] * eTop[1], dir[2] * eTop[0] - dir[0] * eTop[2], dir[0] * eTop[1] - dir[1] * eTop[0]];
         if (eSide[2] < 0) eSide = [-eSide[0], -eSide[1], -eSide[2]];   // FORCE +z (front) → mirror-symmetric wrap
         const underLocal = (p.nodes[2] && p.nodes[2].y) || by.H * 0.5, top = by.H;
-        const SNUG = skin + 4;                                         // hug the arm closely (a loose wrap sags off the thin limb)
+        // The tube wraps at the FABRIC's own radius (flat width / 2π ⇒ hoop strain exactly 0 —
+        // arc length ≡ flat length at every depth because u→θ is uniform), floored at the arm's
+        // collision radius + 1mm so an honestly-too-small sleeve starts just off the surface,
+        // stretches, and still gaps + warns. The old r0+skin+4 wrap PRE-STRAINED the sleeve 18%
+        // (346mm of tube for 294mm of fabric) — the root of the skin-tight jagged look.
+        const armSkinW = (opts && opts.armSkin != null) ? opts.armSkin : 3;
+        const fabricR = bx.W / (2 * Math.PI);
         const depthOf = (lx, ly) => {
           const u = (lx - bx.lo) / bx.W;
           const capY = underLocal + (top - underLocal) * (1 - Math.abs(2 * u - 1));   // cap seamline height (peak at cap-top)
@@ -279,7 +295,7 @@
           const u = (lx - bx.lo) / bx.W;
           const th = (0.5 - u) * 2 * Math.PI;                         // u=½ → 0 (cap-top, on top); u=0/1 → ±π (underarm, underneath)
           const depth = depthOf(lx, ly), t = Math.min(1, depth / aLen);
-          const R = (arm.r0 + (arm.r1 - arm.r0) * t) + SNUG;          // arm radius at t + a small clearance
+          const R = Math.max(fabricR, (arm.r0 + (arm.r1 - arm.r0) * t) + armSkinW + 1);   // zero-pre-strain, floored at the collision surface
           const cx = arm.p0[0] + dir[0] * depth, cy = arm.p0[1] + dir[1] * depth, cz = arm.p0[2] + dir[2] * depth;
           const c = Math.cos(th), s = Math.sin(th);
           return [cx + R * (c * eTop[0] + s * eSide[0]), cy + R * (c * eTop[1] + s * eSide[1]), cz + R * (c * eTop[2] + s * eSide[2])];
@@ -357,6 +373,13 @@
     const stitchIters = opts.stitchIters != null ? opts.stitchIters : DEFAULTS.stitchIters;
     const settleIters = opts.settleIters != null ? opts.settleIters : DEFAULTS.settleIters;
     const damp = opts.damp != null ? opts.damp : DEFAULTS.damp;
+    // M6 armhole polish (garment+arms only — bags/sleeveless never read these):
+    const armSkin = opts.armSkin != null ? opts.armSkin : 3;    // arm-capsule collision skin, mm (torso stays 6).
+                                                                // 3 = the smallest sagitta-safe offset: an h=20 triangle
+                                                                // spanning a ~28mm chord on the 43mm bicep sags ~2.3mm
+                                                                // below its nodes — 2mm showed poke-through patches, and
+                                                                // 6 (the old torso value) ate the sleeve's wearing ease.
+    const smoothK = opts.smoothK != null ? opts.smoothK : 25;   // smooth-union fillet radius, mm; 0 = legacy hard union
 
     // Normalize identically to foldDoc so our piece ids match its transform keys.
     const G = PG();
@@ -422,7 +445,7 @@
     // strain gate. kIc/kJc: EASED cap seams (a sleeve cap into a shorter armhole) — held inert during
     // the unpinned stitch-up and eased in AFTER the bodice pins, else the cap drags the (then-pinned)
     // shoulder open; also NOT in the strain gate (their residual IS the intended ease). welds: darts.
-    const seamLinks = [], kI = [], kJ = [], kSeam = [], kIc = [], kJc = [], weldI = [], weldJ = [];
+    const seamLinks = [], kI = [], kJ = [], kSeam = [], kIc = [], kJc = [], kSeamC = [], weldI = [], weldJ = [];
     const isSleeveId = (pid) => { const gp = gplace && gplace[pid]; if (gp && gp.role) return gp.role === "sleeve"; const p = byId[pid]; return !!(p && p.place3d && p.place3d.role === "sleeve"); };
     const isSkirtId = (pid) => { const gp = gplace && gplace[pid]; if (gp && gp.role) return /skirt/.test(gp.role); const p = byId[pid]; return !!(p && (/skirt/.test((p.name || "").toLowerCase()) || (p.place3d && /skirt/.test(p.place3d.role || "")))); };
     for (const s of seams) {
@@ -457,7 +480,7 @@
       const pairs = PM().seamPairs(ma.mesh, s.a.edge, mb.mesh, s.b.edge, { flip });
       for (const pr of pairs) {
         const gi = ma.start + pr[0], gj = mb.start + pr[1];
-        if (capSeam) { kIc.push(gi); kJc.push(gj); }
+        if (capSeam) { kIc.push(gi); kJc.push(gj); kSeamC.push(s.id); }
         else { kI.push(gi); kJ.push(gj); kSeam.push(s.id); }
         seamLinks.push([gi, gj]);
       }
@@ -523,12 +546,34 @@
       // it can't sag off the thin limb. Built from the wrap → mirror-symmetric; garment+sleeve only.
       const capEdge = new Uint8Array(N);
       for (let k = 0; k < kIc.length; k++) { capEdge[kIc[k]] = 1; capEdge[kJc[k]] = 1; }
+      // …and no tether on ANY seam-member node (the underarm self-seam edges): the tether runs
+      // LAST in the substep, so a tethered seam node near the armpit crease gets dragged toward
+      // its own wrap target every substep while its partner is dragged toward a different one —
+      // the seam can never close against that. The seam spring + collision own those nodes.
+      for (let k = 0; k < kI.length; k++) { capEdge[kI[k]] = 1; capEdge[kJ[k]] = 1; }
+      for (let k = 0; k < weldI.length; k++) { capEdge[weldI[k]] = 1; capEdge[weldJ[k]] = 1; }
+      // Tether targets are PROJECTED onto the smooth-union collision surface once at build time:
+      // the raw wrap puts the tube's inner-side targets INSIDE the torso below the socket (axis −
+      // fabricR lands ~20mm in), and the ≤ARM_HUG_CAP tether then drags fabric back into the wedge
+      // every substep no matter what collision does — that tug-of-war WAS the stable ~16-20mm
+      // armpit clipping. Projected targets sit on the fillet bridge, so tether + collision agree.
+      const smoothTgt = smoothK > 0 && form && form.arms && form.arms.length && BF && BF.smoothField;
       for (const pr of pieceRanges) {
         const gp = gplace[pr.piece];
         if (!gp || gp.role !== "sleeve" || !gp.armTether) continue;
         for (let q = 0; q < pr.count; q++) {
           const i = pr.start + q; if (capEdge[i]) continue;
-          const uv = localUV[i], tgt = gp.armTether(uv[0], uv[1]);
+          const uv = localUV[i];
+          let tgt = gp.armTether(uv[0], uv[1]);
+          if (tgt && smoothTgt) {
+            const d = BF.smoothField(form, tgt, smoothK).d;
+            if (d < -8) tgt = null;                        // deep-wedge target: DROP the tether (a projected
+                                                           // target lands on one armpit fold and tears the
+                                                           // inner face apart at the crease watershed)
+            else if (d < 0) tgt = BF.smoothSurface(form, tgt, smoothK, 6, armSkin, 0, true).point;   // near-surface:
+                                                           // nudge out Newton-only (noEscape — a fold-exit target
+                                                           // would still straddle the watershed)
+          }
           if (tgt) { armHug[i] = 1; armRest[3 * i] = tgt[0]; armRest[3 * i + 1] = tgt[1]; armRest[3 * i + 2] = tgt[2]; nArmHug++; }
         }
       }
@@ -616,14 +661,38 @@
     let selfCollideNow = false;   // cloth self-collision (armed only in the final settle window + reconcile)
     // One-sided analytic body collision: any node inside the form → project to the surface +
     // skin, and zero its velocity there (pseudo-friction, so the garment grips, not slides off).
+    // With ARMS (sleeved garments only), collide against the SMOOTH-UNION fillet field instead of
+    // the hard union: the concave armpit crease has no projection exit (out of the arm lands in
+    // the torso and vice versa — the measured 17–21mm clipping), while the fillet is the surface
+    // real bending-stiff fabric rests on. smin ≤ min ⇒ the fillet lies ON or OUTSIDE the true
+    // union, so cloth on it is never inside the real form (the honest penetration metric only
+    // improves). Sleeveless garments have no arms → the hard-union branch runs byte-identically.
+    const smoothColl = smoothK > 0;
+    // seam-member nodes (any sewing pair or weld) take the Newton-only collision path: the crease
+    // escape picks a nearest armpit fold PER NODE, and a sewn pair straddling the crease watershed
+    // gets torn to OPPOSITE folds (~90mm, re-split every substep). Newton-only keeps a pair
+    // coherent; a corner that genuinely lives in the crease tucks INSIDE it together (occluded by
+    // the form — the physically-right pinched-armpit look). Free fabric keeps the full escape.
+    const seamNode = new Uint8Array(N);
+    for (let k2 = 0; k2 < kI.length; k2++) { seamNode[kI[k2]] = 1; seamNode[kJ[k2]] = 1; }
+    for (let k2 = 0; k2 < kIc.length; k2++) { seamNode[kIc[k2]] = 1; seamNode[kJc[k2]] = 1; }
+    for (let k2 = 0; k2 < weldI.length; k2++) { seamNode[weldI[k2]] = 1; seamNode[weldJ[k2]] = 1; }
     function bodyProject() {
       if (!form || !BF) return;
+      const useSmooth = smoothColl && form.arms && form.arms.length && BF.smoothField;
       for (let i = 0; i < N; i++) {
         if (invm[i] === 0) continue;                        // pins don't collide
         const o = 3 * i;
         const px = X[o], py = X[o + 1], pz = X[o + 2];
-        if (BF.insideForm(form, [px, py, pz])) {
-          const s = BF.nearestSurface(form, [px, py, pz], 6);        // normal horizontal (nx,0,nz)
+        let s = null;
+        if (useSmooth) {
+          // per-call displacement bounded (~0.75·h): the crease escape must not teleport one half
+          // of a sewn pair to the far armpit fold — bounded, the seam springs pull both to one side.
+          if (BF.smoothField(form, [px, py, pz], smoothK).d < 0) s = BF.smoothSurface(form, [px, py, pz], smoothK, 6, armSkin, 0.75 * h, !!seamNode[i]);
+        } else if (BF.insideForm(form, [px, py, pz])) {
+          s = BF.nearestSurface(form, [px, py, pz], 6);              // normal horizontal (nx,0,nz)
+        }
+        if (s) {
           let vx = px - Pp[o], vz = pz - Pp[o + 2];                  // slide tangentially around the body,
           const nx = s.normal[0], nz = s.normal[2], vn = vx * nx + vz * nz;   // grip vertically (vy→0) so it hangs
           vx -= vn * nx; vz -= vn * nz;                             // from its pins — lets a side seam slide closed
@@ -757,7 +826,7 @@
         const oi = 3 * kI[k], oj = 3 * kJ[k];
         const d = Math.hypot(X[oi] - X[oj], X[oi + 1] - X[oj + 1], X[oi + 2] - X[oj + 2]);
         if (d > maxGap) maxGap = d; sumGap += d;
-        if (!perSeam[id]) { perSeam[id] = 0; order.push(id); }
+        if (!(id in perSeam)) { perSeam[id] = 0; order.push(id); }   // `in`, not truthiness: a first gap of 0 must not re-push the id
         if (d > perSeam[id]) perSeam[id] = d;
         if (d > SEG_T) gapSegs.push(X[oi], X[oi + 1], X[oi + 2], X[oj], X[oj + 1], X[oj + 2]);
       }
@@ -821,12 +890,31 @@
       // stretch spring alone creeps under sustained gravity (Gauss–Seidel, few iters/substep), so this
       // bounds elongation — applied in BOTH reconcile and the full-gravity re-settle (else the near-weld
       // seam holds while the fabric stretches downward, dropping the hem to the floor).
+      // SOCKET RELIEF (M6, sleeved only): near an arm root the fabric must bridge from the torso-side
+      // armhole AROUND the outboard-bolted arm — a dress-FORM geometry compromise (the arm can't socket
+      // at the armhole without punching through the bust), not a pattern problem — needing ~35% local
+      // stretch. The uniform 15% clamp forbade that, tearing the closed underarm seam back open (10mm →
+      // 87mm in reconcile) and FALSELY firing the too-small warning. Edges within RELIEF_R of a socket
+      // (warm-start midpoint — static, deterministic) get a tapered extra allowance; everywhere else the
+      // strict clamp keeps the honesty channel intact (a genuinely narrow sleeve still gaps + warns).
+      const RELIEF_R = 100, RELIEF_MAX = 0.45;
+      let edgeLim = null;
+      if (form && form.arms && form.arms.length) {
+        edgeLim = new Float64Array(nS);
+        for (let c = 0; c < nS; c++) {
+          const a = pos[sI[c]], b = pos[sJ[c]];
+          const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, mz = (a[2] + b[2]) / 2;
+          let dm = Infinity;
+          for (const arm of form.arms) { const d = Math.hypot(mx - arm.p0[0], my - arm.p0[1], mz - arm.p0[2]); if (d < dm) dm = d; }
+          edgeLim[c] = 1 + maxStretchFrac + (dm < RELIEF_R ? RELIEF_MAX * (1 - dm / RELIEF_R) : 0);
+        }
+      }
       const clampStretch = () => {
         for (let c = 0; c < nS; c++) {
           const rest = sR[c]; if (!(rest > 1e-6)) continue;
           const oi = 3 * sI[c], oj = 3 * sJ[c];
           const dx = X[oi] - X[oj], dy = X[oi + 1] - X[oj + 1], dz = X[oi + 2] - X[oj + 2];
-          const d = Math.hypot(dx, dy, dz), lim = rest * (1 + maxStretchFrac);
+          const d = Math.hypot(dx, dy, dz), lim = rest * (edgeLim ? edgeLim[c] : 1 + maxStretchFrac);
           if (d > lim && d > EPS) {
             const wi = invm[sI[c]], wj = invm[sJ[c]], w = wi + wj; if (w === 0) continue;
             const corr = (d - lim) / d;
@@ -924,6 +1012,11 @@
         const near = (a, b) => Math.hypot(X[3 * a] - X[3 * b], X[3 * a + 1] - X[3 * b + 1], X[3 * a + 2] - X[3 * b + 2]) < smoothSnapMm;
         const snap = [];
         for (let k = 0; k < nK; k++) if (near(kI[k], kJ[k])) { adj[kI[k]].add(kJ[k]); adj[kJ[k]].add(kI[k]); snap.push(kI[k], kJ[k]); }
+        // EASED cap pairs too (M6 polish): a sewn cap has zero gap AT the stitch line (the ease
+        // gathers in the fabric BETWEEN stitches) — bridging/snapping only already-CLOSE pairs
+        // irons the armhole join like every other seam and cannot mask a fit warning (cap seams
+        // are outside the strain gate; girth misfit warns on the side/underarm seams).
+        for (let k = 0; k < nKc; k++) if (near(kIc[k], kJc[k])) { adj[kIc[k]].add(kJc[k]); adj[kJc[k]].add(kIc[k]); snap.push(kIc[k], kJc[k]); }
         for (let k = 0; k < weldI.length; k++) if (near(weldI[k], weldJ[k])) { adj[weldI[k]].add(weldJ[k]); adj[weldJ[k]].add(weldI[k]); snap.push(weldI[k], weldJ[k]); }
         const A = adj.map((s) => Array.from(s));
         const tmp = new Float64Array(3 * N);
@@ -947,18 +1040,40 @@
       // midpoint — closing the corner. A genuinely-too-small seam (most pairs far) is NOT mostly closed
       // → left untouched → it still gaps + drives overTension (honest). Capped so a large local defect
       // on an otherwise-closed seam isn't hidden. Body-reproject after so nothing snaps into the form.
-      if (nK) {
-        const snapMm = smoothSnapMm, capMm = 90, gapOf = (k) => Math.hypot(X[3 * kI[k]] - X[3 * kJ[k]], X[3 * kI[k] + 1] - X[3 * kJ[k] + 1], X[3 * kI[k] + 2] - X[3 * kJ[k] + 2]);
-        const bySeam = {}; for (let k = 0; k < nK; k++) { const id = kSeam[k] || "?"; (bySeam[id] || (bySeam[id] = [])).push(k); }
+      if (nK || nKc) {
+        const snapMm = smoothSnapMm, capMm = 90;
         let snapped = false;
-        for (const id in bySeam) {
-          const ks = bySeam[id]; let closed = 0; for (const k of ks) if (gapOf(k) < snapMm) closed++;
-          if (closed / ks.length < 0.7) continue;                         // a genuinely-open seam → leave it (warns)
-          for (const k of ks) { const g = gapOf(k); if (g < snapMm || g > capMm) continue;
-            const oi = 3 * kI[k], oj = 3 * kJ[k], mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
-            X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; snapped = true; }
+        // both seam channels: structural (kI/kJ/kSeam) AND the eased cap (kIc/kJc/kSeamC — M6
+        // polish; same honesty gates, and the cap is outside the strain gate anyway).
+        for (const ch of [{ I: kI, J: kJ, ids: kSeam, n: nK }, { I: kIc, J: kJc, ids: kSeamC, n: nKc }]) {
+          const gapOf = (k) => Math.hypot(X[3 * ch.I[k]] - X[3 * ch.J[k]], X[3 * ch.I[k] + 1] - X[3 * ch.J[k] + 1], X[3 * ch.I[k] + 2] - X[3 * ch.J[k] + 2]);
+          const bySeam = {}; for (let k = 0; k < ch.n; k++) { const id = ch.ids[k] || "?"; (bySeam[id] || (bySeam[id] = [])).push(k); }
+          for (const id in bySeam) {
+            const ks = bySeam[id]; let closed = 0; for (const k of ks) if (gapOf(k) < snapMm) closed++;
+            if (closed / ks.length < 0.7) continue;                       // a genuinely-open seam → leave it (warns)
+            for (const k of ks) { const g = gapOf(k); if (g < snapMm || g > capMm) continue;
+              const oi = 3 * ch.I[k], oj = 3 * ch.J[k], mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
+              X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; snapped = true; }
+          }
         }
         if (snapped && collideOn) bodyProject();
+      }
+      // STRICT final lift (smooth path only): the per-substep collision is one-sided (only d<0
+      // triggers), so smoothing can leave nodes hovering between the surface and the skin level;
+      // with the thin 3mm arm skin, flat triangles between such nodes sag BELOW the rendered arm
+      // (poke-through patches). One deterministic end-of-pipeline projection to the full level
+      // fixes the render; it runs BEFORE computeStrain, so any hairline it opens is honestly
+      // measured. Sleeveless (no arms) and bags never enter this block.
+      if (collideOn && smoothColl && form && form.arms && form.arms.length && BF.smoothField) {
+        for (let i = 0; i < N; i++) {
+          if (invm[i] === 0) continue;
+          const o = 3 * i, f = BF.smoothField(form, [X[o], X[o + 1], X[o + 2]], smoothK);
+          const tau = f.hT * 6 + (1 - f.hT) * armSkin;
+          if (f.d < tau - 0.25) {
+            const s = BF.smoothSurface(form, [X[o], X[o + 1], X[o + 2]], smoothK, 6, armSkin, 15, !!seamNode[i]);
+            X[o] = s.point[0]; X[o + 1] = s.point[1]; X[o + 2] = s.point[2];
+          }
+        }
       }
       const strain = computeStrain();
       for (let j = 0; j < pins.length; j++) invm[pins[j]] = savedInvm[j];
@@ -1073,6 +1188,8 @@
       parts.push("g=1", "fab=" + (opts.fabric || "cotton"), "body=" + [b.heightMm, b.bustMm, b.waistMm, b.hipMm].join(","));
       // self-collision knobs (garment-only → bag hash byte-identical): toggling/retuning re-keys the cache.
       parts.push("sc=" + (opts.selfCollide === false ? 0 : 1), "thick=" + (opts.clothThick != null ? opts.clothThick : 0.5 * (opts.h > 0 ? opts.h : DEFAULTS.h)), "scw=" + (opts.selfWindow != null ? opts.selfWindow : 30), "sm=" + (opts.smoothSteps != null ? opts.smoothSteps : 6));
+      // M6 armhole knobs (garment-only → bag hash byte-identical): retuning re-keys the cache.
+      parts.push("ask=" + (opts.armSkin != null ? opts.armSkin : 3), "smk=" + (opts.smoothK != null ? opts.smoothK : 25));
       for (const p of pieces || []) {
         for (const d of (p.darts || [])) parts.push("d", d.edge, q(d.center), q(d.width), q(d.depth), d.kind);
         for (const k in (p.edges || {})) parts.push("e", k, JSON.stringify(p.edges[k].curve));

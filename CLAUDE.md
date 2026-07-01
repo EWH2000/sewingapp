@@ -588,3 +588,43 @@ warm-start sewed the crossed shoulder seam the geometrically-closer/WRONG direct
   a 3D shoulder with the seam closed; **robust across every tuning lever** (reach/snap/pins/gap/mesh — verified
   it's not a tunable bug). Knobs `shoulderZone` (0.25) + `ridgeSpanDeg` (70) remain for owner-gate tuning.
   See [[sewing-sleeve-arms-insight]].
+
+**SLEEVED-TANK ARMHOLE POLISH DONE (2026-07-01) — the deferred "clipping + jagged armhole" is fixed.**
+The owner's report ("sleeve has clipping, jagged edges around the armholes") decomposed into FOUR measured
+root causes (diagnosed via a headless z-buffer render harness + an adversarial 12-agent design workflow),
+all fixed garment-only in `body-form.js` + `pattern-cloth.js` (`SIM_VERSION` 10→11; print spine + calibration
+gate untouched — tiling suite green; **bag + sleeveless drapes PROVEN byte-identical** vs `b1b5161` by direct
+node-level A/B):
+- **(A) Circumference budget bug:** the 6mm collision skin added ~38mm of effective arm circumference —
+  more than the 8% "sleeveEase" the arm was thinned by — AND the tube warm-start wrapped at `r0+skin+4`
+  (+18% pre-strain). The sleeve was skin-tight by construction (p95 stretch 1.54, radial slack ≡ 0) →
+  wrinkles fought by tether+collision = the jagged look. Fix: arm-capsule collision skin 3mm (sagitta-safe;
+  torso stays 6), warm-start at the FABRIC's own radius `max(flatW/2π, armCollR+1)` (0% pre-strain),
+  opts `armSkin`/`smoothK` hashed into geomHash (garment block only).
+- **(B) Concave armpit crease:** at `downDeg` 12° the arm's inner wall OVERLAPPED the torso wall ~14mm for
+  ~140mm below the socket — the union SDF has no projection exit there (out of the arm lands in the torso
+  and vice versa) → cloth trapped 17–21mm INSIDE (the clipping; 99 nodes >8mm), and the underarm seam had
+  to bridge armhole→around-the-arm through solid geometry (an unclosable ~35% stretch bind that tore it
+  open at any clamp setting — no solver lever fixes it). Fix: **arm abduction 12°→20°** (the free shaft
+  clears the torso; only the anatomical shoulder joint overlaps — measured clean across body sizes; render
+  + collider share the stack so both follow) + a **smooth-union fillet collision field**
+  (`BF.smoothField`/`smoothSurface`, k=25: quadratic smin whose gradient is exactly the convex normal blend;
+  safeguarded never-worsening Newton + monotone crease/±y escape marches, per-call displacement bounded
+  0.75·h so a sewn pair straddling the crease watershed can't be torn to opposite folds — seam-member nodes
+  are Newton-only + never tethered) + a **socket-relief stretch allowance** (extra clamp headroom tapering
+  over 100mm from each arm root — compensates the arm-root-outboard form compromise; elsewhere the strict
+  15% keeps the too-small honesty channel) + a strict end-of-pipeline lift to the skin level (kills
+  sub-triangle poke-through; runs BEFORE computeStrain so it can't hide a gap).
+- **(C) Cap seam never polished:** the eased `kIc` pairs were the ONLY seam class excluded from the final
+  Taubin bridge/snap + straggler snap → the armhole join line stayed torn (mean 10.5mm). Fix: cap pairs
+  join both under the same honesty gates (≤ snapMm, ≥70%-closed; cap seams remain outside the strain gate).
+  Plus a `computeStrain` falsy-zero dupe fix (`in`, not truthiness).
+- **Result (seeded tank, h=20):** union penetration 169 nodes/max 20.8mm → **0 nodes/0.0mm**; cap seam max
+  27.6/mean 10.5mm → **1.9/0.1mm**; underarm 10.8 → **0.0mm**; bodice stays 8.0mm; sleeve roughness mean
+  7.9 → **5.0mm** (max 49→18); no false overTension (a genuinely-too-small garment still warns — asserted).
+  Renders: a round, full set-in sleeve with a continuous cap join. Draft (h=25) was ALREADY broken at HEAD
+  (bodice ~97mm) — pre-existing, not addressed; owner gates on Standard. Tests: `verify-body-form` 59→68
+  (abduction clearance, fillet ⊆ union, wedge-grid exit, noEscape watershed safety, determinism),
+  `verify-garment-drape` 70→73 (pen<6 vs torso∪arms, cap<12 both sides, underarm<6, sleeve-smoothness,
+  sleeved determinism); full preview + tiling suites green. Diagnosis/render harness in the session
+  scratchpad (diag-sleeve.mjs / render3d.mjs / renderz.mjs — rebuildable from this entry).

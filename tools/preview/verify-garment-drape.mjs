@@ -312,13 +312,16 @@ console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice 
     else if (!si && !sj) bodiceGap = Math.max(bodiceGap, d); // bodice's own seams (must stay closed — the phasing fix)
   }
   ok(bodiceGap < 15, `the bodice's own seams stay CLOSED with sleeves attached (${bodiceGap.toFixed(1)}mm — the cap-seam phasing keeps the cap from dragging the shoulder open)`);
-  ok(underarm < 15, `the sleeve underarm self-seam zips the tube shut (${underarm.toFixed(1)}mm — the non-dart same-piece spring)`);
+  ok(underarm < 6, `the sleeve underarm self-seam zips the tube shut (${underarm.toFixed(1)}mm — was ~10mm before the M6 armhole polish, and 85mm mid-fix when the stretch clamp fought the arm-root bind)`);
+  // M6 armhole polish: the armpit CLIPPING is fixed — abducted arm (the shaft clears the torso) +
+  // smooth-union fillet collision (fabric bridges the crease) + honest circumference budget. The
+  // penetration gate drops 16 → 6mm, measured vs the TRUE union (the fillet lies outside it).
+  const formArms0 = BF.loft(body, { arms: true });
+  const penU = rs.nodes.reduce((m, p) => Math.max(m, -Math.min(0, BF.signedDist(formArms0, p))), 0);
+  ok(penU < 6, `armpit clipping is GONE: max penetration into torso∪arms ${penU.toFixed(1)}mm (was ~21mm — union-crease trap)`);
   const form2 = BF.loft(body);
   const pen = rs.nodes.reduce((m, p) => Math.max(m, -Math.min(0, BF.signedDist(form2, p))), 0);
-  // Stage B2: the arm sits CLOSE to the torso so it FILLS the sleeve (the owner's goal); a few sleeve
-  // nodes clip into the form at the armpit (arm∩torso overlap) — an inherent soft-body limit, kept low
-  // and translucent/least-visible. Sleeveless bodice/skirt/dress + bags stay byte-identical (own tests).
-  ok(pen < 16, `body penetration bounded at the armpit with sleeves (${pen.toFixed(1)}mm — arm∩torso soft-body limit)`);
+  ok(pen < 16, `torso-only penetration also bounded (${pen.toFixed(1)}mm)`);
   ok(rs.strain.overTension === false, "an eased cap does NOT false-trip the over-tension warning (cap seams are out of the strain gate)");
   // sleeves land outside the torso on opposite sides (R → +x, L → −x)
   const sx = (id) => { const pr = rs.pieceRanges.find((p) => p.piece === id); let s = 0; for (let k = 0; k < pr.count; k++) s += rs.nodes[pr.start + k][0]; return s / pr.count; };
@@ -332,10 +335,10 @@ console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice 
   };
   const capArms = capOf(rs);                                                  // arms derived ON (sleeve present)
   const capNoArms = capOf(Cl.solveDrape(pcs, sm, Object.assign({}, opts, { arms: false })));
-  // M6: untwisting the armhole drops the cap↔armhole gap from ~86mm to ~15mm (no arms) / ~23mm (arms) —
-  // the cap can finally close onto a CLEAN armhole loop. The arm adds a small outboard pull; bounded here.
-  ok(capNoArms < 25, `M6: the untwisted armhole nearly closes the cap↔armhole gap (no-arms ${capNoArms.toFixed(0)}mm — was ~86mm twisted)`);
-  ok(capArms < 32, `the cap stays nearly closed over the arm (arms ${capArms.toFixed(0)}mm)`);
+  // M6 armhole polish: the cap seam now IRONS SHUT like every other seam (the eased kIc pairs
+  // joined the Taubin bridge/snap + straggler snap) — max pair gap ~1-3mm, was 15-27mm ragged.
+  ok(capNoArms < 12, `the cap seam sews shut, no arms (${capNoArms.toFixed(1)}mm — was ~86mm twisted, ~15mm pre-polish)`);
+  ok(capArms < 12, `the cap seam sews shut over the arm (${capArms.toFixed(1)}mm — was ~23mm pre-polish)`);
   console.log(`   (M6: cap↔armhole gap ${capNoArms.toFixed(0)}mm → ${capArms.toFixed(0)}mm with arms — was ~86mm before the untwist)`);
   const formArmed = BF.loft(body, { arms: true });
   ok(formArmed.arms && formArmed.arms.length === 2, "the solver lofts two arms for the sleeved garment");
@@ -373,6 +376,27 @@ console.log("=== SET-IN SLEEVE (M6 Stage B1): the WORKING properties — bodice 
   ok(Math.abs(cR.x + cL.x) < 25 && Math.abs(cR.y - cL.y) < 25 && Math.abs(cR.z - cL.z) < 25,
      `the two sleeves drape MIRROR-symmetrically (Δx̄=${Math.abs(cR.x + cL.x).toFixed(0)}, Δȳ=${Math.abs(cR.y - cL.y).toFixed(0)}, Δz̄=${Math.abs(cR.z - cL.z).toFixed(0)})`);
   ok(cR.zspread > 60 && cL.zspread > 60, `both sleeves WRAP their arm front-to-back, not hang flat (z-spread R=${cR.zspread.toFixed(0)} L=${cL.zspread.toFixed(0)})`);
+
+  // ── M6 armhole polish: sleeve smoothness + determinism of the new collision path ──
+  // The old wrap pre-strained the tube 18% (skin-tight, wrinkles fought by tether+collision →
+  // jagged, mean |Laplacian| ~8mm). With the honest circumference budget it drapes smooth (~5mm).
+  {
+    const nb = Array.from({ length: rs.nodes.length }, () => new Set());
+    for (const t of rs.tris) { nb[t[0]].add(t[1]); nb[t[0]].add(t[2]); nb[t[1]].add(t[0]); nb[t[1]].add(t[2]); nb[t[2]].add(t[0]); nb[t[2]].add(t[1]); }
+    let s = 0, c = 0;
+    for (const pr of rs.pieceRanges) {
+      if (!/slv/.test(pr.piece)) continue;
+      for (let k = 0; k < pr.count; k++) {
+        const i = pr.start + k, a = [...nb[i]]; if (!a.length) continue;
+        let cx = 0, cy = 0, cz = 0; for (const j of a) { cx += rs.nodes[j][0]; cy += rs.nodes[j][1]; cz += rs.nodes[j][2]; }
+        s += Math.hypot(rs.nodes[i][0] - cx / a.length, rs.nodes[i][1] - cy / a.length, rs.nodes[i][2] - cz / a.length); c++;
+      }
+    }
+    ok(s / c < 6.5, `sleeve surface is smooth (mean |Laplacian| ${(s / c).toFixed(2)}mm — was ~8 skin-tight)`);
+  }
+  const rs2 = Cl.solveDrape(pcs, sm, opts);
+  let sd2 = 0; for (let i = 0; i < rs.nodes.length; i++) for (let d = 0; d < 3; d++) sd2 = Math.max(sd2, Math.abs(rs.nodes[i][d] - rs2.nodes[i][d]));
+  ok(sd2 < 1e-9, `the sleeved drape is deterministic (max Δ ${sd2.toExponential(1)} — smooth-union projection + escapes + snaps are fixed-order)`);
 }
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"} — ${pass} passed, ${fail} failed`);

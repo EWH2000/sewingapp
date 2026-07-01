@@ -113,6 +113,57 @@ const tp = [10, band("bust").y, 5];   // a torso-interior point, far from any ar
 ok(JSON.stringify(BF.nearestSurface(BF.loft(D), tp, 6)) === JSON.stringify(BF.nearestSurface(SA, tp, 6)),
    "arms don't perturb a torso-only projection (byte-identical torso path)");
 
+console.log("=== M6 armhole polish: arm ABDUCTION clears the torso below the socket ===");
+// At the old 12° the arm's inner wall overlapped the torso wall ~14mm for ~140mm below the
+// socket — an unclosable geometric bind for the sleeve underarm (it tore the seam open). At the
+// new default the free shaft clears the torso; only the anatomical shoulder joint overlaps.
+{
+  const yq = AR.p0[1] - 130;                                  // underarm-junction height
+  const dirY = (AR.p1[1] - AR.p0[1]);
+  const t = (yq - AR.p0[1]) / dirY;
+  const ax = AR.p0[0] + t * (AR.p1[0] - AR.p0[0]);
+  const Rq = AR.r0 + (AR.r1 - AR.r0) * t;
+  const ring = BF.ringAt(SA, yq);
+  ok(ax - Rq > ring.a, `arm inner wall clears the torso at the underarm junction (${(ax - Rq - ring.a).toFixed(1)}mm gap at y=socket−130)`);
+}
+
+console.log("=== M6 armhole polish: smooth-union (fillet) collision field ===");
+{
+  const K = 25;
+  // fillet ⊆: smin ≤ min everywhere, so the d=0 isosurface lies ON or OUTSIDE the true union —
+  // cloth resting on it can never be inside the real form.
+  const probes = [[175, 1210, -4], [165, 1250, 0], [172, AR.p0[1], 0], [230, 1100, 20], [10, band("bust").y, 5], [400, 1200, 0]];
+  ok(probes.every((p) => BF.smoothField(SA, p, K).d <= BF.signedDist(SA, p) + 1e-9), "smoothField ≤ true-union signedDist everywhere (fillet only bulges outward)");
+  // far from any crease the field IS the hard union
+  ok(Math.abs(BF.smoothField(SA, [400, 1200, 0], K).d - BF.signedDist(SA, [400, 1200, 0])) < 1e-9, "far from the crease the smooth field equals the hard union");
+  // projection: a grid across the armpit wedge exits the TRUE union (the old hard-union
+  // projection had no exit there — the measured 17-21mm clipping). Mirrors the solver's usage:
+  // repeated BOUNDED calls (one per substep) — assert convergence within a modest call budget.
+  let worstTrue = Infinity, worse = 0;
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) for (let m = 0; m < 5; m++) {
+    let p = [148 + i * 6, 1180 + j * 20, -40 + m * 20];
+    const d0 = BF.signedDist(SA, p);
+    for (let it = 0; it < 20; it++) {
+      if (BF.smoothField(SA, p, K).d >= 0) break;
+      p = BF.smoothSurface(SA, p, K, 6, 3, 15).point;        // bounded, like bodyProject
+    }
+    const dT = BF.signedDist(SA, p);
+    if (dT < worstTrue) worstTrue = dT;
+    if (dT < d0 - 1e-6) worse++;
+  }
+  ok(worstTrue > -1, `wedge-grid projection exits the true union under repeated bounded calls (worst residual ${worstTrue.toFixed(2)}mm)`);
+  ok(worse === 0, "projection never leaves a point worse than it started (safeguarded Newton + monotone escapes)");
+  // noEscape (seam nodes): never worsens the field, never teleports across the watershed
+  const pw = [165, 1250, 0];
+  const sn = BF.smoothSurface(SA, pw, K, 6, 3, 0, true);
+  ok(BF.smoothField(SA, sn.point, K).d >= BF.smoothField(SA, pw, K).d - 1e-9, "noEscape projection never lowers the field");
+  ok(Math.hypot(sn.point[2] - pw[2]) < 25, "noEscape stays near its start (no fold teleport for seam nodes)");
+  // bounded step: total displacement capped
+  const sb = BF.smoothSurface(SA, [175, 1210, -4], K, 6, 3, 10);
+  ok(Math.hypot(sb.point[0] - 175, sb.point[1] - 1210, sb.point[2] + 4) <= 10 + 1e-9, "maxStepMm caps the per-call displacement");
+  ok(JSON.stringify(BF.smoothSurface(SA, [170, 1239, -12], K, 6, 3)) === JSON.stringify(BF.smoothSurface(SA, [170, 1239, -12], K, 6, 3)), "smoothSurface is deterministic");
+}
+
 // ── RENDER section (resolver + preview3d.js) ──────────────────────────────────────
 console.log("=== dressFormGroup render (three.js) ===");
 let THREE, P3;
