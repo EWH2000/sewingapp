@@ -29,7 +29,13 @@
 (function () {
   "use strict";
 
-  const SIM_VERSION = 11;  // 11: armhole polish — (A) the sleeve's circumference budget is honest: arm collision skin
+  const SIM_VERSION = 12;  // 12: armhole polish round 2 (owner screenshots) — a LOCALIZED post-snap relax irons the
+                           //     straggler-snap "tent" spikes (the shoulder-seam fin + underarm shard: a snapped pair
+                           //     teleports ~45mm while its neighbors stay), and a CHORD lift raises triangle-edge
+                           //     midpoints to the skin level (coarse mesh can't follow the shoulder curve — the fabric
+                           //     now errs slightly OUTSIDE the figure instead of clipping inside; deep crease-tucked
+                           //     chords stay tucked). Both smooth-path (sleeved) only — sleeveless/bags byte-identical.
+                           // 11: armhole polish — (A) the sleeve's circumference budget is honest: arm collision skin
                            //     2mm (was 6 — which ate the 8% sleeve ease: 2π·6 ≈ 38mm of circumference) + the tube
                            //     warm-start wraps at the FABRIC's own radius (max(flatW/2π, armCollR+1) — was arm+12,
                            //     +18% pre-strain), so the sleeve drapes with slack instead of skin-tight; (B) garment
@@ -1040,6 +1046,7 @@
       // midpoint — closing the corner. A genuinely-too-small seam (most pairs far) is NOT mostly closed
       // → left untouched → it still gaps + drives overTension (honest). Capped so a large local defect
       // on an otherwise-closed seam isn't hidden. Body-reproject after so nothing snaps into the form.
+      const snappedN = new Set();     // nodes the straggler snap teleported (relaxed below, smooth path)
       if (nK || nKc) {
         const snapMm = smoothSnapMm, capMm = 90;
         let snapped = false;
@@ -1053,10 +1060,77 @@
             if (closed / ks.length < 0.7) continue;                       // a genuinely-open seam → leave it (warns)
             for (const k of ks) { const g = gapOf(k); if (g < snapMm || g > capMm) continue;
               const oi = 3 * ch.I[k], oj = 3 * ch.J[k], mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
-              X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; snapped = true; }
+              X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz; snapped = true;
+              snappedN.add(ch.I[k]); snappedN.add(ch.J[k]); }
           }
         }
         if (snapped && collideOn) bodyProject();
+      }
+      // LOCALIZED post-snap relax (smooth/sleeved path only — sleeveless stays byte-identical):
+      // a straggler snap teleports a pair up to ~45mm/node to its midpoint while the surrounding
+      // fabric keeps its settled position — a sharp TENT of cloth (the owner's shoulder-seam "fin"
+      // + underarm "shard", measured |Laplacian| spikes of 40-65mm). Iron ONLY the snap
+      // neighborhoods (2-ring), with the near seam pairs re-midpointed each pass (so the relax
+      // can't reopen what the snap closed) and a body reproject after. Genuinely-open pairs are
+      // never touched (honesty preserved).
+      if (collideOn && smoothColl && form && form.arms && form.arms.length && BF.smoothField) {
+        const adjR = Array.from({ length: N }, () => []);
+        for (const t of tris) { adjR[t[0]].push(t[1], t[2]); adjR[t[1]].push(t[0], t[2]); adjR[t[2]].push(t[0], t[1]); }
+        // Seed ONLY from actually-snapped nodes (a |Laplacian| threshold seed was tried and
+        // rejected: it catches LEGITIMATE geometry — ridge crests, hanging hem folds — and
+        // flattening those wrecked the skirt). The snap teleport is the one true defect source.
+        const seed = new Set(snappedN);
+        if (seed.size) {
+          const relax = new Set(seed);
+          for (const i of seed) for (const j of adjR[i]) relax.add(j);
+          for (const i of [...relax]) for (const j of adjR[i]) relax.add(j);   // 2-ring ironing radius
+          // near pairs fully inside the relax set → hold them shut through the passes
+          const hold = [];
+          for (const ch of [{ I: kI, J: kJ, n: nK }, { I: kIc, J: kJc, n: nKc }, { I: weldI, J: weldJ, n: weldI.length }])
+            for (let k = 0; k < ch.n; k++) {
+              const a = ch.I[k], b = ch.J[k];
+              if (!relax.has(a) && !relax.has(b)) continue;
+              if (Math.hypot(X[3 * a] - X[3 * b], X[3 * a + 1] - X[3 * b + 1], X[3 * a + 2] - X[3 * b + 2]) < smoothSnapMm) hold.push(a, b);
+            }
+          const order = [...relax].sort((a, b) => a - b);          // fixed iteration order (determinism)
+          const lapPass = (w) => {
+            const moved = new Map();
+            for (const i of order) {
+              if ((invm[i] === 0 && !smoothPins) || !adjR[i].length) continue;   // pins relax too (the FIN is pinned
+                                                                                 // shoulder-seam nodes) — same smoothPins
+                                                                                 // semantics as the global Taubin pass
+              let cx = 0, cy = 0, cz = 0; for (const j of adjR[i]) { cx += X[3 * j]; cy += X[3 * j + 1]; cz += X[3 * j + 2]; }
+              const m = adjR[i].length, o = 3 * i;
+              moved.set(i, [X[o] + w * (cx / m - X[o]), X[o + 1] + w * (cy / m - X[o + 1]), X[o + 2] + w * (cz / m - X[o + 2])]);
+            }
+            for (const [i, p] of moved) { X[3 * i] = p[0]; X[3 * i + 1] = p[1]; X[3 * i + 2] = p[2]; }
+          };
+          // PLAIN λ passes, deliberately NOT Taubin λ|μ: Taubin is shape-preserving — its μ
+          // expansion restores a mid-frequency "feature" like the 45mm snap tent (which is why
+          // the fin survived the global smoothing). Pure shrinking Laplacian flattens the tent;
+          // safe here because the set is only the snap neighborhoods (natural folds untouched),
+          // and the strict node/chord lifts below re-float anything that sank into the form.
+          for (let p = 0; p < 8; p++) {
+            lapPass(0.5);
+            for (let s = 0; s < hold.length; s += 2) {
+              const oi = 3 * hold[s], oj = 3 * hold[s + 1];
+              const mx = (X[oi] + X[oj]) / 2, my = (X[oi + 1] + X[oj + 1]) / 2, mz = (X[oi + 2] + X[oj + 2]) / 2;
+              X[oi] = mx; X[oi + 1] = my; X[oi + 2] = mz; X[oj] = mx; X[oj + 1] = my; X[oj + 2] = mz;
+            }
+          }
+          // relaxed PINS must be re-projected here: pins skip bodyProject AND the strict lift,
+          // so a pin the relax sank into the form would clip permanently (measured 14mm on the
+          // seeded tank's shoulder ridge without this).
+          for (const i of order) {
+            if (invm[i] !== 0) continue;
+            const o = 3 * i, f = BF.smoothField(form, [X[o], X[o + 1], X[o + 2]], smoothK);
+            if (f.d < 0) {
+              const s = BF.smoothSurface(form, [X[o], X[o + 1], X[o + 2]], smoothK, 6, armSkin, 0, true);
+              X[o] = s.point[0]; X[o + 1] = s.point[1]; X[o + 2] = s.point[2];
+            }
+          }
+          bodyProject();
+        }
       }
       // STRICT final lift (smooth path only): the per-substep collision is one-sided (only d<0
       // triggers), so smoothing can leave nodes hovering between the surface and the skin level;
@@ -1065,13 +1139,80 @@
       // fixes the render; it runs BEFORE computeStrain, so any hairline it opens is honestly
       // measured. Sleeveless (no arms) and bags never enter this block.
       if (collideOn && smoothColl && form && form.arms && form.arms.length && BF.smoothField) {
+        // LAYER ORDER at the cap seam: near the shoulder junction the bodice and the (eased,
+        // bunched) sleeve-cap sheets otherwise occupy the same shell and INTERLEAVE — rendering
+        // as jagged shards of each poking through the other (the owner's "fin"/"shard"). A real
+        // set-in cap lies OVER the bodice, so sleeve fabric within 2 rings of the cap seam gets
+        // a slightly higher lift level (+2.5mm); the sewn cap EDGE itself is exempt (it must stay
+        // coincident with the armhole). Deterministic ordering instead of a z-fighting lottery.
+        const capBonus = new Float64Array(N);
+        if (nKc) {
+          const adjB = Array.from({ length: N }, () => []);
+          for (const t of tris) { adjB[t[0]].push(t[1], t[2]); adjB[t[1]].push(t[0], t[2]); adjB[t[2]].push(t[0], t[1]); }
+          const capEdgeN = new Set();
+          for (let k = 0; k < nKc; k++) { capEdgeN.add(kIc[k]); capEdgeN.add(kJc[k]); }
+          const sleeveN = new Uint8Array(N);
+          for (const pr of pieceRanges) if (isSleeveId(pr.piece)) for (let q = 0; q < pr.count; q++) sleeveN[pr.start + q] = 1;
+          let ring = new Set(capEdgeN);
+          for (let depth = 0; depth < 2; depth++) {
+            const next = new Set();
+            for (const i of ring) for (const j of adjB[i]) if (!capEdgeN.has(j) && sleeveN[j]) { if (!capBonus[j]) next.add(j); capBonus[j] = 2.5; }
+            ring = next;
+          }
+        }
         for (let i = 0; i < N; i++) {
           if (invm[i] === 0) continue;
           const o = 3 * i, f = BF.smoothField(form, [X[o], X[o + 1], X[o + 2]], smoothK);
-          const tau = f.hT * 6 + (1 - f.hT) * armSkin;
+          const tau = f.hT * 6 + (1 - f.hT) * armSkin + capBonus[i];
           if (f.d < tau - 0.25) {
-            const s = BF.smoothSurface(form, [X[o], X[o + 1], X[o + 2]], smoothK, 6, armSkin, 15, !!seamNode[i]);
+            const s = BF.smoothSurface(form, [X[o], X[o + 1], X[o + 2]], smoothK, 6 + capBonus[i], armSkin + capBonus[i], 15, !!seamNode[i]);
             X[o] = s.point[0]; X[o + 1] = s.point[1]; X[o + 2] = s.point[2];
+          }
+        }
+        // CHORD lift: node-level clearance isn't enough where the mesh is coarser than the form's
+        // curvature — a flat triangle spanning the shoulder slope dips INSIDE it between its nodes
+        // (measured up to ~8mm; the "form pokes through at the shoulder"). Sample every triangle
+        // edge midpoint; where it sits below the level, lift the endpoints along the field gradient
+        // by the deficit. The fabric errs slightly OUTSIDE the figure where it can't follow the
+        // curve — a marginally looser fit instead of clipping. PAIR-COHERENT: nodes sewn together
+        // (any seam/weld pair currently coincident-ish) form a GROUP that takes one shared lift —
+        // per-side lifts would pry the seam open (measured ua 0.6→17.7 without this).
+        {
+          const parent = new Int32Array(N); for (let i = 0; i < N; i++) parent[i] = i;
+          const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+          const uni = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb); };
+          for (const ch of [{ I: kI, J: kJ, n: nK }, { I: kIc, J: kJc, n: nKc }, { I: weldI, J: weldJ, n: weldI.length }])
+            for (let k = 0; k < ch.n; k++) {
+              const a = ch.I[k], b = ch.J[k];
+              if (Math.hypot(X[3 * a] - X[3 * b], X[3 * a + 1] - X[3 * b + 1], X[3 * a + 2] - X[3 * b + 2]) < 3) uni(a, b);
+            }
+          for (let sweep = 0; sweep < 2; sweep++) {
+            const cand = new Map();                      // group root → largest-magnitude lift vector
+            for (const t of tris) {
+              for (let e = 0; e < 3; e++) {
+                const a = t[e], b = t[(e + 1) % 3];
+                if (a > b) continue;                     // each undirected edge once per sweep
+                const oa = 3 * a, ob = 3 * b;
+                const mid = [(X[oa] + X[ob]) / 2, (X[oa + 1] + X[ob + 1]) / 2, (X[oa + 2] + X[ob + 2]) / 2];
+                const f = BF.smoothField(form, mid, smoothK);
+                const tau = f.hT * 6 + (1 - f.hT) * armSkin;
+                if (f.d >= tau - 0.5) continue;
+                const lift = tau - f.d;
+                if (lift > 12) continue;                 // deep = intentionally crease-tucked (hidden); only iron shallow sag
+                const gl = Math.hypot(f.g[0], f.g[1], f.g[2]) || 1;
+                const v = [(f.g[0] / gl) * lift, (f.g[1] / gl) * lift, (f.g[2] / gl) * lift];
+                for (const n of [a, b]) {
+                  if (invm[n] === 0) continue;
+                  const r0 = find(n), prev = cand.get(r0);
+                  if (!prev || lift * lift > prev[0] * prev[0] + prev[1] * prev[1] + prev[2] * prev[2]) cand.set(r0, v);
+                }
+              }
+            }
+            for (let i = 0; i < N; i++) {
+              if (invm[i] === 0) continue;
+              const v = cand.get(find(i)); if (!v) continue;
+              X[3 * i] += v[0]; X[3 * i + 1] += v[1]; X[3 * i + 2] += v[2];
+            }
           }
         }
       }

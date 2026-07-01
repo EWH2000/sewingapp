@@ -628,3 +628,22 @@ node-level A/B):
   `verify-garment-drape` 70→73 (pen<6 vs torso∪arms, cap<12 both sides, underarm<6, sleeve-smoothness,
   sleeved determinism); full preview + tiling suites green. Diagnosis/render harness in the session
   scratchpad (diag-sleeve.mjs / render3d.mjs / renderz.mjs — rebuildable from this entry).
+- **Round 2 (same day, owner screenshots of a hand-edited SLEEVED DRESS — sleeves added to id 7 in the
+  editor): two residual junction artifacts fixed (`SIM_VERSION` 11→12).** (1) **Chord clipping**: nodes sat
+  at the skin level but coarse triangles sagged INSIDE the curved shoulder (measured 8mm on the owner's
+  doc) — a CHORD LIFT samples every triangle-edge midpoint and lifts sewn GROUPS (union-find over
+  coincident pairs — per-side lifts pried seams open 0.6→18mm) to the level: the fabric errs slightly
+  OUTSIDE the figure where the mesh can't follow the curve (the owner's explicit call); deep
+  crease-tucked chords stay tucked. (2) **Cap↔bodice layer interleave** (the "fin"/"shard"): at the
+  shoulder + underarm junctions the eased cap sheet and the bodice sheet occupied the same shell and
+  z-fought as jagged interpenetrating shards — sleeve fabric within 2 rings of the cap seam now lifts
+  +2.5mm ABOVE the bodice sheet (a set-in cap lies OVER the bodice; the sewn edge stays coincident) —
+  deterministic layer order instead of a lottery. Plus a λ-only relax of straggler-snap tents scoped to
+  the SNAPPED nodes' 2-ring only (a |Laplacian|-threshold scope was tried and REVERTED — it catches
+  legitimate ridge crests + hem folds and flattening those wrecked the skirt; Taubin λ|μ can't flatten
+  tents at all — shape-preserving by design), with relaxed PINS re-projected (they skip collision + the
+  strict lift → a sunken pin clipped 14mm). Verified on the owner's dress doc AND the seeded tank: 0
+  penetration, 0 chord clipping, all seams closed, no false warn; bag/sleeveless byte-identity re-proven;
+  full suite green. NB the |Laplacian| "spike" metric conflates defects with legitimate geometry (the
+  neckline-corner V reads 68mm and is CORRECT) — judge junction quality by renders + chord/penetration
+  metrics, not raw Laplacian.
