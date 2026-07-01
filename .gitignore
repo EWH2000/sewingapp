@@ -29,6 +29,7 @@ tools/**/*.png
 # local debugging screenshots (not source) — incl. the owner's pasted issue screenshots
 Screenshots/
 ArmsIssue*.png
+ArmsSmallIssue*.png
 
 # Internal session handoffs / dev notes — they narrate the owner's hands-on reviews,
 # directives, device, and reactions (private/relational user info). Keep them LOCAL,
