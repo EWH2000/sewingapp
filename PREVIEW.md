@@ -985,12 +985,21 @@ warm start that makes the drape tractable.
    + user-tested:** a freeform sleeve PIECE (5-node bell, two cubic cap edges eased into the
    armhole) authored via a "+ Sleeve" button and printed 1:1 — print spine byte-identical, no
    collider change. Confirmed the on-ramp held: the seam graph / curves / ease / notches model
-   carried the sleeve unchanged. **Stage B1 (NEXT) = drape beside the limbless torso** (sleeve
-   warm-start + the underarm same-piece self-seam, NO arms yet); **Stage B2 (later, optional) =
-   analytic capsule ARMS on the form** ("the collider gains arms", exactly as planned here). So
-   M6 is no longer fully deferred — the authoring half shipped; only the arm collider remains
-   optional. Full design + locked decisions + risk list: the plan file
-   `~/.claude/plans/can-we-add-a-dazzling-sky.md`.
+   carried the sleeve unchanged. **Stage B1 + B2 DONE** (the collider gained analytic capsule
+   arms, exactly as planned here; the sleeve wraps the limb mirror-symmetrically).
+   **UPDATE (2026-07-01): M6 COMPLETE + polished.** The cap-shoulder hole closed (`2c93f42` —
+   armhole untwist + real form shoulders/neck), then the deferred armhole polish shipped
+   (`900bc92` + `e3ec5db`, SIM_VERSION 12): honest sleeve circumference budget (the collision
+   skin had eaten the wearing ease), 20° arm abduction (the 12° arm overlapped the torso wall —
+   an unclosable geometric bind at the underarm), a smooth-union fillet collision field (fabric
+   bridges the armpit crease instead of trapping inside it), cap pairs joined the seam-polish
+   snaps, a chord lift (whole triangles stay OUTSIDE the form where the mesh can't follow the
+   curve — owner's preference), and deterministic cap-over-bodice layer ordering at the
+   junctions. Owner-verified on the seeded tank AND a hand-edited sleeved dress; bags +
+   sleeveless garments proven byte-identical throughout. The full record lives in
+   `~/sewingapp/CLAUDE.md` status (2026-06-27 + 2026-07-01 entries); known floor: Draft (h=25)
+   sleeved drape was already broken pre-polish (owner gates on Standard), and the exact 3-way
+   seam junctions keep a small real-world-style pucker at Standard mesh density.
 2. **Garment scope — RESOLVED (2026-06-21): skirts + tank-style (sleeveless) dresses
    first.** This is the easy, high-value end of §3.3: minimal curves, few/no darts, no
    sleeve-cap easing. 3b can ship with light curve/dart support and grow it; the full
